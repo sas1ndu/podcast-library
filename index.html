@@ -1,131 +1,108 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <title>Podcast Library</title>
-
-  <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Listen to study podcasts, upload audio to your configured cloud, and organise your saved links by subject.">
+  <title>Audio Library - Your podcasts, your pace</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%235e4ce6'/%3E%3Cpath d='M18 35v-5a14 14 0 0 1 28 0v5M18 33v13h7V33zm21 0v13h7V33z' fill='none' stroke='white' stroke-width='4' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./style.css?v=1.0.0">
+  <script src="./config.js?v=1.0.0" defer></script>
+  <script src="./app.js?v=1.0.0" defer></script>
 </head>
-
 <body>
-
-<main class="container">
-
-  <header>
-    <h1>Podcast Library</h1>
-    <p>Upload and listen to your study podcasts.</p>
-  </header>
-
-
-  <section class="card">
-
-    <h2>Upload Podcast</h2>
-
-    <input
-      type="file"
-      id="audioFile"
-      accept="audio/*"
-    >
-
-    <button id="uploadButton">
-      Upload to Cloud
-    </button>
-
-
-    <div
-      id="progressContainer"
-      class="progress-container hidden"
-    >
-
-      <div
-        id="progressBar"
-        class="progress-bar"
-      ></div>
-
-    </div>
-
-    <p id="uploadStatus"></p>
-
-  </section>
-
-
-  <section
-    id="playerSection"
-    class="card hidden"
-  >
-
-    <h2 id="audioTitle">
-      Podcast
-    </h2>
-
-    <audio
-      id="audioPlayer"
-      controls
-    ></audio>
-
-
-    <div class="controls">
-
-      <button id="backButton">
-        -15 sec
-      </button>
-
-      <button id="forwardButton">
-        +15 sec
-      </button>
-
-    </div>
-
-
-    <div class="speed-control">
-
-      <label for="speed">
-        Speed
-      </label>
-
-      <select id="speed">
-
-        <option value="0.5">0.5×</option>
-        <option value="0.75">0.75×</option>
-        <option value="1" selected>1×</option>
-        <option value="1.25">1.25×</option>
-        <option value="1.5">1.5×</option>
-        <option value="1.75">1.75×</option>
-        <option value="2">2×</option>
-
-      </select>
-
-    </div>
-
-
-    <div
-      id="shareSection"
-      class="share-section hidden"
-    >
-
-      <p>
-        Audio link
-      </p>
-
-      <input
-        id="shareLink"
-        readonly
-      >
-
-      <button id="copyButton">
-        Copy Link
-      </button>
-
-    </div>
-
-  </section>
-
-</main>
-
-
-<script src="app.js"></script>
-
+  <a class="skip-link" href="#main">Skip to player</a>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Audio Library home">
+        <span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 13V11a8 8 0 0 1 16 0v2M4 12h4v8H5a1 1 0 0 1-1-1zm16 0h-4v8h3a1 1 0 0 0 1-1z"/></svg></span>
+        <span data-app-name>Audio Library</span>
+      </a>
+      <div class="header-actions">
+        <span class="version-badge" id="connectionBadge"><span class="status-dot" aria-hidden="true"></span><span id="connectionLabel">Local player</span></span>
+        <button class="button button-secondary" id="settingsButton" type="button" aria-haspopup="dialog">Settings</button>
+      </div>
+    </header>
+    <main id="main">
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">LESS SETUP. MORE LISTENING.</p>
+        <h1 id="page-title">Your podcasts.<br><span>Your pace.</span></h1>
+        <p class="intro-copy">A quiet space for your study audio. Listen on your device, share from the cloud, and keep your subjects together.</p>
+      </section>
+      <p class="notice notice-info hidden" id="storageNotice" role="status"></p>
+      <p class="notice notice-error hidden" id="globalError" role="alert"></p>
+      <div class="workspace">
+        <section class="card upload-card" aria-labelledby="upload-title">
+          <div class="card-heading"><span class="step-label">01 / OPEN &amp; UPLOAD</span><span class="small-tag">No account needed</span></div>
+          <h2 id="upload-title">Start with a recording</h2>
+          <p class="section-copy">Choose a NotebookLM podcast or another audio file. Preview first. Upload when you are ready.</p>
+          <div class="drop-zone" id="dropZone">
+            <span class="upload-symbol" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M16 21V7m-5 5 5-5 5 5M7 21v4h18v-4"/></svg></span>
+            <p class="drop-title">Drop your audio here</p>
+            <p class="drop-hint" id="chosenFile">or pick a file to get started</p>
+            <input class="visually-hidden file-input" type="file" id="audioFile" accept="audio/*,.mp3,.m4a,.aac,.wav,.wave,.ogg,.oga,.opus,.webm,.flac,.mp4" aria-describedby="formatHint">
+            <label class="button button-primary" for="audioFile" id="fileLabel">Choose audio file <span aria-hidden="true">&rarr;</span></label>
+            <p class="format-hint" id="formatHint">MP3, M4A, WAV &amp; more<br><span id="uploadLimitHint">Cloud upload limit: 80 MiB per file.</span></p>
+          </div>
+          <div class="draft-form" id="draftForm">
+            <label class="field-label" for="podcastTitle">Recording title</label>
+            <input class="text-input" id="podcastTitle" type="text" maxlength="180" placeholder="Give your recording a name" autocomplete="off">
+            <div class="field-heading"><label class="field-label" for="podcastSubject">Subject</label><button class="text-button" id="newSubjectUpload" type="button">+ New subject</button></div>
+            <select id="podcastSubject" class="full-width" aria-label="Subject for this recording"></select>
+            <div class="upload-actions"><button class="button button-primary" id="uploadButton" type="button" disabled>Upload to cloud <span aria-hidden="true">&uarr;</span></button><button class="text-button text-muted hidden" id="cancelUpload" type="button">Cancel upload</button></div>
+            <div class="progress-container hidden" id="progressContainer"><progress id="uploadProgress" value="0" max="100" aria-label="Upload progress"></progress></div>
+            <p class="upload-status" id="uploadStatus" role="status" aria-live="polite">Choose a file to preview it. Nothing is uploaded automatically.</p>
+          </div>
+          <p class="notice notice-error hidden" id="fileError" role="alert"></p>
+          <div class="privacy-note"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5z"/><path d="M12 14v3"/></svg><p><strong>Local until you choose to share.</strong><br>Upload sends audio to the configured cloud server. Anyone with its audio link can listen.</p></div>
+        </section>
+        <div class="listening-column">
+          <section class="card empty-state" id="emptyState" aria-labelledby="empty-title">
+            <span class="step-label">02 / LISTEN</span>
+            <div class="record-illustration" aria-hidden="true"><div class="record-disc"><div class="record-label"><svg viewBox="0 0 24 24" fill="none"><path d="M10 6v12l9-6z"/></svg></div></div><div class="record-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+            <h2 id="empty-title">A good listen starts here.</h2>
+            <p>Open a file or play a saved recording below.<br>Bring the podcast. Set the pace.</p>
+            <div class="feature-pills"><span>Speed control</span><span>15-second skips</span><span>Resume listening</span><span>Share links</span></div>
+          </section>
+          <section class="card player-section hidden" id="playerSection" aria-labelledby="audioTitle">
+            <div class="card-heading"><span class="step-label">02 / LISTEN</span><span class="player-state" id="playerState" role="status">Loading...</span></div>
+            <div class="now-playing-heading"><div class="mini-cover" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M6 13v6m5-12v18m5-15v12m5-17v22m5-14v6"/></svg></div><div class="title-group"><p class="eyebrow track-eyebrow" id="trackSource">ON YOUR DEVICE</p><h2 id="audioTitle">Your recording</h2></div></div>
+            <div class="file-details"><span id="fileType">AUDIO</span><span id="fileSize"></span><span id="audioDuration">Reading duration...</span></div>
+            <audio id="audioPlayer" controls preload="metadata" aria-label="Audio playback controls">Your browser does not support HTML audio playback.</audio>
+            <p class="notice notice-error hidden" id="playbackError" role="alert"></p>
+            <div class="extra-controls"><div class="skip-controls" role="group" aria-label="Skip controls"><button class="button button-secondary" type="button" id="backButton" disabled aria-label="Rewind 15 seconds"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M8 3 3 8l5 5M3 8h9a8 8 0 1 1-7 12"/></svg><span>15 sec</span></button><button class="button button-secondary" type="button" id="forwardButton" disabled aria-label="Forward 15 seconds"><span>15 sec</span><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="m16 3 5 5-5 5m5-5h-9a8 8 0 1 0 7 12"/></svg></button></div><div class="speed-control"><label for="speed">Speed</label><select id="speed"><option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1" selected>1x</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="1.75">1.75x</option><option value="2">2x</option></select></div></div>
+            <div class="resume-notice hidden" id="resumeNotice"><p>Saved position: <strong id="resumeTime"></strong></p><div><button class="text-button" id="resumeButton" type="button">Resume here</button><button class="text-button text-muted" id="restartButton" type="button">Start over</button></div></div>
+            <div class="secondary-controls"><button class="text-button" id="addBookmark" type="button" disabled>+ Bookmark this moment</button><div class="speed-control"><label for="sleepTimer">Sleep</label><select id="sleepTimer"><option value="0">Off</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option></select></div></div>
+            <p class="small-copy hidden" id="sleepStatus" role="status"></p>
+            <ul class="bookmark-list" id="bookmarkList" aria-label="Saved bookmarks"></ul>
+            <div class="share-section hidden" id="shareSection"><div class="field-heading"><label for="shareLink" class="field-label">Share this player</label><span class="small-tag">Link-only sharing</span></div><div class="copy-row"><input class="text-input" id="shareLink" readonly aria-label="Shareable player link"><button class="button button-primary" id="copyButton" type="button">Copy</button></div><div class="share-actions"><a class="text-button" id="directAudioLink" target="_blank" rel="noopener noreferrer">Open audio directly</a><button class="text-button" id="saveSharedButton" type="button">Save to my library</button></div><p class="small-copy" id="shareHint">Recipients get the player. Your subjects and listening history stay in this browser.</p></div>
+            <div class="player-bottom"><label class="remember-control" for="rememberPosition"><input id="rememberPosition" type="checkbox" checked><span>Remember my position</span></label><button class="text-button text-muted" id="clearButton" type="button">Close player</button></div>
+            <p class="save-note" id="saveNote">For local audio, select the same file next time. The original file is not stored by this page.</p>
+            <div class="keyboard-note"><span>Keyboard</span><span><kbd>Space</kbd> play / pause</span><span><kbd>&larr;</kbd> <kbd>&rarr;</kbd> skip 15s</span></div>
+          </section>
+        </div>
+      </div>
+      <section class="library-section" aria-labelledby="libraryTitle">
+        <div class="library-heading"><div><p class="eyebrow">03 / KEEP IT TOGETHER</p><h2 id="libraryTitle">Your listening shelf <span id="libraryCount" class="count-badge">0</span></h2><p class="section-copy">Saved cloud recordings, organised by subject in this browser.</p></div><div class="library-actions"><button class="button button-secondary" type="button" id="addLinkButton">Add audio link</button><button class="button button-secondary" type="button" id="newSubjectButton">+ New subject</button></div></div>
+        <nav class="subject-filters" id="subjectFilters" aria-label="Filter recordings by subject"></nav>
+        <div class="library-toolbar"><label class="visually-hidden" for="librarySearch">Search recording titles</label><input class="text-input" type="search" id="librarySearch" placeholder="Search your recordings..."><label class="visually-hidden" for="librarySort">Sort recordings</label><select id="librarySort"><option value="newest">Newest first</option><option value="title">Title A-Z</option></select></div>
+        <div class="episode-list" id="episodeList"></div>
+        <div class="shelf-empty" id="libraryEmpty"><h3>Your next idea belongs here.</h3><p>Upload a recording or add a cloud audio link. Your saved recordings will appear here.</p></div>
+        <div class="library-footer"><p>Audio is in R2. This shelf, subjects, bookmarks, and progress are browser-local.<br>Export a backup before clearing your browser data.</p><div><button class="text-button" id="exportLibrary" type="button">Export library</button><button class="text-button" id="importLibraryButton" type="button">Import library</button><button class="text-button text-muted" id="manageSubjects" type="button">Manage subjects</button></div></div>
+        <input class="visually-hidden" type="file" id="importLibraryFile" accept="application/json,.json" aria-label="Import library backup">
+      </section>
+      <section class="scope-note"><span class="scope-icon" aria-hidden="true">i</span><div><h2>What this release does</h2><p>Local playback, cloud upload, shareable players, and a browser-local subject library. Compression, automatic transcription, and shared cloud collections are not part of this release.</p></div></section>
+      <p class="visually-hidden" id="appStatus" role="status" aria-live="polite"></p>
+      <noscript><p class="notice notice-error">Please enable JavaScript to use this audio player.</p></noscript>
+    </main>
+    <footer><span data-app-name>Audio Library</span><span>Cloud + local edition / 1.0.0</span></footer>
+  </div>
+  <dialog id="settingsDialog" aria-labelledby="settingsTitle"><div class="dialog-heading"><h2 id="settingsTitle">Connection settings</h2><button class="dialog-close" type="button" data-close="settingsDialog" aria-label="Close settings">&times;</button></div><p class="section-copy">The site default comes from <code>config.js</code>. An override below changes only this browser, not everyone else's site.</p><form id="settingsForm"><label class="field-label" for="apiBaseInput">Cloudflare Worker base URL</label><input class="text-input" type="url" id="apiBaseInput" placeholder="https://your-worker.your-subdomain.workers.dev" autocomplete="off"><p class="small-copy">Use the base address only, without <code>/health</code> or <code>/upload</code>. Leave empty for local-only mode.</p><p class="notice notice-error hidden" id="settingsError" role="alert"></p><div class="dialog-actions"><button class="button button-primary" type="submit">Save for this browser</button><button class="button button-secondary" type="button" id="testConnection">Test connection</button></div><button class="text-button" type="button" id="resetConnection">Use site default instead</button><p id="connectionResult" class="small-copy" role="status"></p></form><div class="dialog-footnote">API addresses are public, not secrets. Never put R2 access keys or Cloudflare API tokens in this frontend.</div></dialog>
+  <dialog id="subjectDialog" aria-labelledby="subjectDialogTitle"><div class="dialog-heading"><h2 id="subjectDialogTitle">New subject</h2><button class="dialog-close" type="button" data-close="subjectDialog" aria-label="Close subject editor">&times;</button></div><form id="subjectForm"><label class="field-label" for="subjectName">Subject name</label><input class="text-input" id="subjectName" maxlength="60" required placeholder="e.g. Financial Reporting"><label class="field-label" for="subjectColor">Colour</label><input type="color" id="subjectColor" value="#5e4ce6"><p class="notice notice-error hidden" id="subjectError" role="alert"></p><div class="dialog-actions"><button class="button button-primary" type="submit">Save subject</button><button class="button button-secondary hidden" type="button" id="deleteSubject">Delete subject</button></div><p class="small-copy">Deleting a subject moves its recordings to Unsorted. It does not delete audio.</p></form></dialog>
+  <dialog id="manageDialog" aria-labelledby="manageTitle"><div class="dialog-heading"><h2 id="manageTitle">Manage subjects</h2><button class="dialog-close" type="button" data-close="manageDialog" aria-label="Close subjects">&times;</button></div><div id="manageSubjectList"></div></dialog>
+  <dialog id="linkDialog" aria-labelledby="linkTitle"><div class="dialog-heading"><h2 id="linkTitle">Add an existing audio link</h2><button class="dialog-close" type="button" data-close="linkDialog" aria-label="Close audio link form">&times;</button></div><p class="section-copy">Add a link from the earlier uploader without uploading the same recording again. Use its Worker <code>/audio/ID</code> address.</p><form id="linkForm"><label class="field-label" for="existingAudioUrl">Audio URL</label><input class="text-input" type="url" id="existingAudioUrl" required placeholder="https://your-worker.workers.dev/audio/..." autocomplete="off"><label class="field-label" for="existingAudioTitle">Title</label><input class="text-input" id="existingAudioTitle" maxlength="180" required placeholder="Recording title"><label class="field-label" for="existingAudioSubject">Subject</label><select class="full-width" id="existingAudioSubject"></select><p class="notice notice-error hidden" id="linkError" role="alert"></p><div class="dialog-actions"><button class="button button-primary" type="submit">Add to my library</button></div></form></dialog>
+  <div class="toast hidden" id="toast" role="status"></div>
 </body>
 </html>
