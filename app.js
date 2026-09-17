@@ -1,11 +1,11 @@
-/* Audio Library 1.0.0. No packages or build step. Public settings: config.js.
- * Audio lives in R2 after upload. The shelf and preferences are browser-local.
+/* Audio Library 2.1.0. Public settings: config.js.
+ * Audio and the public catalogue live in R2. Personal playback data is local.
  * The browser never receives Cloudflare credentials.
  */
 "use strict";
 (() => {
   const config = window.PODCAST_CONFIG || {};
-  const ids = ["audioFile", "fileLabel", "dropZone", "chosenFile", "podcastTitle", "podcastSubject", "uploadButton", "cancelUpload", "uploadStatus", "uploadProgress", "progressContainer", "fileError", "audioPlayer", "playerSection", "emptyState", "audioTitle", "fileType", "fileSize", "audioDuration", "backButton", "forwardButton", "speed", "clearButton", "playerState", "playbackError", "storageNotice", "appStatus", "rememberPosition", "resumeNotice", "resumeTime", "resumeButton", "restartButton", "trackSource", "saveNote", "shareSection", "shareLink", "copyButton", "directAudioLink", "saveSharedButton", "shareHint", "settingsButton", "settingsDialog", "settingsForm", "apiBaseInput", "settingsError", "testConnection", "resetConnection", "connectionResult", "connectionBadge", "connectionLabel", "uploadLimitHint", "subjectFilters", "librarySearch", "librarySort", "episodeList", "libraryEmpty", "libraryCount", "newSubjectButton", "newSubjectUpload", "subjectDialog", "subjectDialogTitle", "subjectForm", "subjectName", "subjectColor", "subjectError", "deleteSubject", "manageSubjects", "manageDialog", "manageSubjectList", "addLinkButton", "linkDialog", "linkForm", "existingAudioUrl", "existingAudioTitle", "existingAudioSubject", "linkError", "exportLibrary", "importLibraryButton", "importLibraryFile", "addBookmark", "bookmarkList", "sleepTimer", "sleepStatus", "toast", "globalError"];
+  const ids = ["audioFile", "fileLabel", "dropZone", "chosenFile", "podcastTitle", "podcastSubject", "uploadButton", "cancelUpload", "uploadStatus", "uploadProgress", "progressContainer", "fileError", "audioPlayer", "playerSection", "emptyState", "audioTitle", "fileType", "fileSize", "audioDuration", "backButton", "forwardButton", "speed", "clearButton", "playerState", "playbackError", "storageNotice", "appStatus", "rememberPosition", "resumeNotice", "resumeTime", "resumeButton", "restartButton", "trackSource", "saveNote", "shareSection", "shareLink", "copyButton", "directAudioLink", "saveSharedButton", "shareHint", "settingsButton", "settingsDialog", "settingsForm", "apiBaseInput", "settingsError", "testConnection", "resetConnection", "connectionResult", "connectionBadge", "connectionLabel", "uploadLimitHint", "subjectFilters", "librarySearch", "librarySort", "episodeList", "libraryEmpty", "libraryCount", "newSubjectButton", "newSubjectUpload", "subjectDialog", "subjectDialogTitle", "subjectForm", "subjectName", "subjectColor", "subjectError", "deleteSubject", "manageSubjects", "manageDialog", "manageSubjectList", "addLinkButton", "linkDialog", "linkForm", "existingAudioUrl", "existingAudioTitle", "existingAudioSubject", "linkError", "exportLibrary", "importLibraryButton", "importLibraryFile", "addBookmark", "bookmarkList", "sleepTimer", "sleepStatus", "toast", "globalError", "openUploadButton", "heroUploadButton", "closeUploadButton", "uploadPanel", "uploadBackdrop", "compressionPresets", "optimiseButton", "cancelOptimise", "compressionStatus", "compressionMessage", "compressionPercent", "compressionProgress", "processedResult", "originalSize", "processedSize", "processedSaving", "processedFormat", "processedAdvice", "processedPreview", "useProcessed", "useOriginal", "downloadProcessed", "retryOptimise", "optimiseCloudButton", "transcriptPanel", "transcriptBadge", "transcriptPrivacy", "generateTranscript", "cancelTranscript", "importTranscriptButton", "importTranscriptFile", "clearModelCache", "transcriptProgressWrap", "transcriptStatus", "transcriptPercent", "transcriptProgress", "transcriptError", "transcriptReady", "transcriptSearch", "transcriptFollow", "transcriptSegments", "copyTranscript", "publishBox", "publishHint", "publishTranscript"];
   const ui = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
   const missing = ids.filter(id => !ui[id]);
   if (missing.length) {
@@ -18,12 +18,35 @@
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
   const MIME_BY_EXT = { mp3: "audio/mpeg", m4a: "audio/mp4", mp4: "audio/mp4", aac: "audio/aac", wav: "audio/wav", wave: "audio/wav", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg", webm: "audio/webm", flac: "audio/flac" };
+  const processing = window.AudioLibraryProcessing;
+  const compressionSettings = config.compression && typeof config.compression === "object" ? config.compression : { enabled: false, presets: [] };
+  const transcriptionSettings = config.transcription && typeof config.transcription === "object" ? config.transcription : { enabled: false };
+  const publishingSettings = config.transcriptPublishing && typeof config.transcriptPublishing === "object" ? config.transcriptPublishing : { enabled: false };
+  const publicLibrarySettings = config.publicLibrary && typeof config.publicLibrary === "object" ? config.publicLibrary : { enabled: true, pageSize: 100, maxItems: 5000 };
   const appName = String(config.appName || "Audio Library").slice(0, 80);
   const maxBytes = Number.isSafeInteger(config.maxUploadBytes) && config.maxUploadBytes > 0 ? config.maxUploadBytes : 80 * 1024 * 1024;
   const timeoutMs = Number.isSafeInteger(config.uploadTimeoutMs) && config.uploadTimeoutMs > 0 ? config.uploadTimeoutMs : 1200000;
   let storageAvailable = true;
   let current = null;
   let draftFile = null;
+  let originalFile = null;
+  let processedFile = null;
+  let uploadCandidate = null;
+  let processedURL = null;
+  let selectedPreset = String(compressionSettings.defaultPreset || "original");
+  let audioProcessor = compressionSettings.enabled && window.AudioLibraryCompression ? new window.AudioLibraryCompression.AudioProcessor(compressionSettings) : null;
+  let processingJob = null;
+  let transcriptionWorker = null;
+  let transcriptionInitReject = null;
+  let transcriptionAbortController = null;
+  let transcriptionJob = 0;
+  let transcriptionPending = new Map();
+  let currentTranscript = null;
+  let currentTranscriptRef = null;
+  let transcriptRenderToken = 0;
+  let heavyJobActive = false;
+  let originalDuration = null;
+  let transcriptManualUntil = 0;
   let uploadXHR = null;
   let uploadedDraft = null;
   let objectURL = null;
@@ -47,6 +70,9 @@
   } catch (_) { /* Ignore an invalid/stale connection override. */ }
   let apiBase = apiOverride !== undefined ? apiOverride : siteAPI;
   let saved = loadState();
+  let publicEpisodes = [];
+  let publicLibraryLoading = false;
+  let publicLibraryError = "";
 
   function show(element, visible = true) { element.classList.toggle("hidden", !visible); }
   function text(tag, value, className) {
@@ -116,12 +142,19 @@
     return subject && typeof subject.id === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(subject.id) && !["all", "unsorted", "__proto__", "constructor"].includes(subject.id) && typeof subject.name === "string" && subject.name.trim() && /^#[0-9a-f]{6}$/i.test(subject.color || "");
   }
   function defaults() {
-    return { version: 1, subjects: (Array.isArray(config.defaultSubjects) ? config.defaultSubjects : []).filter(validSubject).map(s => ({ id: s.id, name: s.name.trim().slice(0, 60), color: s.color })), episodes: [], speed: 1, remember: true, positions: Object.create(null), bookmarks: Object.create(null) };
+    return { version: 2, subjects: (Array.isArray(config.defaultSubjects) ? config.defaultSubjects : []).filter(validSubject).map(s => ({ id: s.id, name: s.name.trim().slice(0, 60), color: s.color })), episodes: [], speed: 1, remember: true, positions: Object.create(null), bookmarks: Object.create(null) };
+  }
+  function normalizeTranscriptRef(value) {
+    if (!value || typeof value !== "object") return null;
+    const localId = typeof value.localId === "string" && UUID.test(value.localId) ? value.localId.toLowerCase() : "";
+    const publishedId = typeof value.publishedId === "string" && UUID.test(value.publishedId) ? value.publishedId.toLowerCase() : "";
+    if (!localId && !publishedId) return null;
+    return { localId, publishedId, sourceIdentity: String(value.sourceIdentity || "").slice(0, 800), status: publishedId ? "published" : "local", updatedAt: Number.isFinite(value.updatedAt) ? value.updatedAt : Date.now() };
   }
   function normalizeEpisode(entry) {
     if (!entry || typeof entry !== "object") throw new Error("Invalid recording.");
     const parsed = parseAudioURL(entry.audioUrl || `${entry.apiBaseUrl}/audio/${entry.id}`);
-    return { ...parsed, title: cleanTitle(entry.title), fileName: String(entry.fileName || "").slice(0, 250), subjectId: typeof entry.subjectId === "string" ? entry.subjectId : "", size: Number.isFinite(entry.size) && entry.size >= 0 ? entry.size : null, duration: Number.isFinite(entry.duration) && entry.duration > 0 ? entry.duration : null, createdAt: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now(), type: typeof entry.type === "string" && entry.type.startsWith("audio/") ? entry.type : "" };
+    return { ...parsed, title: cleanTitle(entry.title), fileName: String(entry.fileName || "").slice(0, 250), subjectId: typeof entry.subjectId === "string" ? entry.subjectId.slice(0, 80) : "", publicSubjectName: String(entry.publicSubjectName || "").slice(0, 60), publicSubjectColor: /^#[0-9a-f]{6}$/i.test(entry.publicSubjectColor || "") ? entry.publicSubjectColor : "", isPublic: Boolean(entry.isPublic), size: Number.isFinite(entry.size) && entry.size >= 0 ? entry.size : null, duration: Number.isFinite(entry.duration) && entry.duration > 0 ? entry.duration : null, createdAt: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now(), type: typeof entry.type === "string" && entry.type.startsWith("audio/") ? entry.type : "", transcript: normalizeTranscriptRef(entry.transcript) };
   }
   function normalizeState(data) {
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid library data.");
@@ -145,6 +178,7 @@
         if (Array.isArray(list)) state.bookmarks[key] = list.filter(b => b && Number.isFinite(b.time) && b.time >= 0).slice(0, 500).map(b => ({ id: uid(), time: b.time, label: cleanTitle(b.label, "Bookmark") }));
       }
     }
+    state.version = 2;
     return state;
   }
   function loadState() {
@@ -182,6 +216,7 @@
   function restoreSpeed() { ui.audioPlayer.defaultPlaybackRate = saved.speed; ui.audioPlayer.playbackRate = saved.speed; }
   function releaseAudio() {
     metadataReady = false; current = null; resumePending = null; loadOptions = null;
+    currentTranscript = null; currentTranscriptRef = null; transcriptRenderToken++;
     ui.audioPlayer.pause(); ui.audioPlayer.removeAttribute("src"); ui.audioPlayer.load();
     if (objectURL) URL.revokeObjectURL(objectURL);
     objectURL = null; enableSeek(false);
@@ -195,8 +230,10 @@
     ui.fileSize.textContent = formatSize(track.size);
     ui.audioDuration.textContent = "Reading duration...";
     ui.saveNote.textContent = track.kind === "cloud" ? "Resume from this browser's saved library. Your playback position is not shared with other listeners." : "For local audio, select the same file next time. The original file is not stored by this page.";
+    currentTranscriptRef = normalizeTranscriptRef(track.entry?.transcript || track.transcriptRef);
+    show(ui.optimiseCloudButton, track.kind === "cloud" && Boolean(compressionSettings.enabled));
     showError(ui.playbackError, ""); show(ui.resumeNotice, false); show(ui.emptyState, false); show(ui.playerSection);
-    setState("Loading..."); renderBookmarks(); renderShare(); renderLibrary();
+    setState("Loading..."); renderBookmarks(); renderShare(); renderLibrary(); renderCurrentTranscript();
     try {
       if (track.kind === "local") { objectURL = URL.createObjectURL(track.file); ui.audioPlayer.src = objectURL; }
       else ui.audioPlayer.src = track.entry.audioUrl;
@@ -211,15 +248,17 @@
     if (!file.size) { showError(ui.fileError, "This file is empty. Choose an audio recording with content."); return; }
     const ext = extension(file.name);
     if (!file.type.startsWith("audio/") && !MIME_BY_EXT[ext]) { showError(ui.fileError, "Choose an audio file, such as MP3, M4A, or WAV."); return; }
-    draftFile = file; uploadedDraft = null;
+    resetProcessedAudio();
+    originalFile = file; draftFile = file; uploadCandidate = file; uploadedDraft = null;
     ui.chosenFile.textContent = `${file.name} / ${formatSize(file.size)}`;
     ui.fileLabel.textContent = "Choose another file";
     ui.podcastTitle.value = cleanTitle(file.name.replace(/\.[^.]+$/, "").replace(/_/g, " "));
     ui.uploadStatus.classList.remove("is-success");
-    ui.uploadStatus.textContent = file.size > maxBytes ? `Local preview is ready. This file exceeds the cloud limit of ${formatSize(maxBytes)}; use a smaller recording to upload.` : "Local preview is ready. Click Upload to cloud to store and share it.";
+    ui.uploadStatus.textContent = file.size > maxBytes ? `Local preview is ready. The original exceeds ${formatSize(maxBytes)}, but you can optimise it and upload the result if that is smaller than the limit.` : "Local preview is ready. Optimise optionally, then upload the selected version.";
     show(ui.progressContainer, false); ui.uploadProgress.value = 0;
     updateUploadButton();
-    openTrack({ kind: "local", key: JSON.stringify([file.name, file.size, file.lastModified]), title: ui.podcastTitle.value, fileName: file.name, size: file.size, file });
+    openTrack({ kind: "local", key: JSON.stringify([file.name, file.size, file.lastModified]), title: ui.podcastTitle.value, fileName: file.name, size: file.size, file, sourceFile: file });
+    updateCompressionUI();
   }
   function updateDuration() {
     if (!current) return;
@@ -227,6 +266,7 @@
     const valid = Number.isFinite(duration) && duration > 0;
     ui.audioDuration.textContent = valid ? `${formatTime(duration)} duration` : "Duration unavailable";
     enableSeek(valid && !ui.audioPlayer.error);
+    if (valid && current.kind === "local" && current.file === originalFile) originalDuration = duration;
     if (valid && current.kind === "cloud") {
       current.entry.duration = duration;
       const entry = saved.episodes.find(e => keyOf(e) === current.key);
@@ -312,8 +352,8 @@
   for (const name of ["dragover", "drop"]) window.addEventListener(name, event => { if (event.dataTransfer && Array.from(event.dataTransfer.types).includes("Files")) event.preventDefault(); });
 
   function updateUploadButton() {
-    ui.uploadButton.disabled = Boolean(uploadXHR) || !draftFile || draftFile.size > maxBytes || !apiBase || Boolean(uploadedDraft);
-    ui.uploadButton.textContent = uploadedDraft ? "Uploaded to cloud" : "Upload to cloud";
+    ui.uploadButton.disabled = Boolean(uploadXHR) || !uploadCandidate || uploadCandidate.size > maxBytes || !apiBase || Boolean(uploadedDraft) || heavyJobActive;
+    ui.uploadButton.textContent = uploadedDraft ? "Uploaded publicly" : "Upload publicly";
   }
   function setUploading(active) {
     for (const input of [ui.audioFile, ui.podcastTitle, ui.podcastSubject, ui.settingsButton, ui.newSubjectUpload]) input.disabled = active;
@@ -321,10 +361,11 @@
   }
   function uploadFailure(message) { ui.uploadStatus.classList.remove("is-success"); ui.uploadStatus.textContent = message; }
   function upload() {
-    if (uploadXHR || !draftFile || uploadedDraft) return;
+    if (uploadXHR || !uploadCandidate || uploadedDraft) return;
     if (!apiBase) { openSettings(); return; }
-    if (draftFile.size > maxBytes) { showError(ui.fileError, `Cloud uploads are limited to ${formatSize(maxBytes)} in this configuration.`); return; }
-    const file = draftFile, base = apiBase, title = cleanTitle(ui.podcastTitle.value, file.name), subjectId = ui.podcastSubject.value;
+    if (uploadCandidate.size > maxBytes) { showError(ui.fileError, `The selected upload version is ${formatSize(uploadCandidate.size)}. Cloud uploads are limited to ${formatSize(maxBytes)}.`); return; }
+    const file = uploadCandidate, base = apiBase, title = cleanTitle(ui.podcastTitle.value, file.name), subjectId = ui.podcastSubject.value;
+    const publicSubject = saved.subjects.find(subject => subject.id === subjectId);
     const mime = MIME_BY_EXT[extension(file.name)] || (file.type.startsWith("audio/") ? file.type : "");
     if (!mime) { showError(ui.fileError, "This audio format could not be identified. Try MP3 or M4A."); return; }
     const xhr = new XMLHttpRequest(); uploadXHR = xhr; setUploading(true);
@@ -333,13 +374,18 @@
     xhr.open("POST", `${base}/upload`); xhr.timeout = timeoutMs;
     xhr.setRequestHeader("Content-Type", mime);
     xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name.slice(0, 200)));
+    xhr.setRequestHeader("X-Title", encodeURIComponent(title));
+    if (subjectId) xhr.setRequestHeader("X-Subject-Id", subjectId);
+    if (publicSubject) { xhr.setRequestHeader("X-Subject-Name", encodeURIComponent(publicSubject.name)); xhr.setRequestHeader("X-Subject-Color", publicSubject.color); }
+    const publicDuration = Number.isFinite(originalDuration) ? originalDuration : Number(ui.audioPlayer.duration);
+    if (Number.isFinite(publicDuration) && publicDuration > 0) xhr.setRequestHeader("X-Duration", String(publicDuration));
     xhr.upload.addEventListener("progress", event => {
       if (!event.lengthComputable) return;
       const percent = Math.round(event.loaded / event.total * 100);
       ui.uploadProgress.value = percent;
       ui.uploadStatus.textContent = percent < 100 ? `Uploading ${percent}%...` : "Audio sent. Waiting for cloud storage confirmation...";
     });
-    xhr.onload = () => {
+    xhr.onload = async () => {
       let result;
       try { result = JSON.parse(xhr.responseText); } catch (_) { result = null; }
       if (xhr.status < 200 || xhr.status >= 300) {
@@ -350,15 +396,27 @@
       try {
         const link = parseAudioURL(result.audioUrl);
         if (link.apiBaseUrl !== base || link.id !== result.id.toLowerCase()) throw new Error("Unexpected audio address from server.");
-        const entry = normalizeEpisode({ ...link, title, fileName: file.name, size: file.size, subjectId, type: mime, createdAt: Date.now() });
-        const oldKey = JSON.stringify([file.name, file.size, file.lastModified]);
+        const entry = normalizeEpisode({ ...link, title, fileName: file.name, size: file.size, subjectId, type: mime, createdAt: Date.now(), transcript: currentTranscriptRef });
+        const sourceForIdentity = originalFile || file;
+        const oldKey = JSON.stringify([sourceForIdentity.name, sourceForIdentity.size, sourceForIdentity.lastModified]);
+        if (currentTranscript && currentTranscriptRef?.localId) {
+          const cloudIdentity = processing.transcriptIdentity({ kind: "cloud", id: entry.id, apiBaseUrl: entry.apiBaseUrl });
+          try {
+            currentTranscript = processing.normalizeTranscript({ ...currentTranscript, recordingIdentity: cloudIdentity, sourceIdentity: currentTranscript.sourceIdentity || oldKey });
+            await processing.transcriptStore.put(currentTranscript, currentTranscriptRef.localId);
+            entry.transcript = { ...currentTranscriptRef, sourceIdentity: currentTranscript.sourceIdentity, updatedAt: Date.now() };
+          } catch (_) {
+            entry.transcript = null;
+            notify("Audio uploaded, but the local transcript could not be reattached. The audio was not uploaded again.");
+          }
+        }
         if (saved.positions[oldKey]) saved.positions[keyOf(entry)] = { ...saved.positions[oldKey] };
         if (saved.bookmarks[oldKey]) saved.bookmarks[keyOf(entry)] = saved.bookmarks[oldKey].map(item => ({ ...item }));
         saved.episodes = saved.episodes.filter(e => keyOf(e) !== keyOf(entry)); saved.episodes.unshift(entry);
-        uploadedDraft = entry; persist(); renderSubjects(); renderLibrary();
+        uploadedDraft = entry; persist(); renderSubjects(); renderLibrary(); loadPublicLibrary();
         ui.uploadProgress.value = 100; ui.uploadStatus.classList.add("is-success");
-        ui.uploadStatus.textContent = storageAvailable ? "Uploaded to R2. Your link is saved in this browser's library." : "Uploaded to R2. Copy the link and export your library; browser storage is unavailable.";
-        const localIsCurrent = current && current.kind === "local" && current.file === file;
+        ui.uploadStatus.textContent = storageAvailable ? "Uploaded to R2 and added to the public library. Your personal playback data stays in this browser." : "Uploaded to R2 and added to the public library. Copy the link; personal browser storage is unavailable.";
+        const localIsCurrent = current && current.kind === "local";
         const position = localIsCurrent && metadataReady ? ui.audioPlayer.currentTime : undefined;
         const autoplay = Boolean(localIsCurrent && !ui.audioPlayer.paused);
         openCloud(entry, { position, autoplay });
@@ -379,48 +437,102 @@
     select.replaceChildren(new Option("Unsorted", ""), ...saved.subjects.map(s => new Option(s.name, s.id)));
     select.value = saved.subjects.some(s => s.id === value) ? value : "";
   }
+  function libraryEntries() {
+    const entries = new Map(publicEpisodes.map(entry => [keyOf(entry), entry]));
+    for (const local of saved.episodes) {
+      const remote = entries.get(keyOf(local));
+      entries.set(keyOf(local), remote ? { ...remote, ...local, isPublic: true, publicSubjectName: remote.publicSubjectName, publicSubjectColor: remote.publicSubjectColor } : local);
+    }
+    return Array.from(entries.values());
+  }
+  function displaySubject(entry) {
+    const local = subjectById(entry.subjectId);
+    if (entry.subjectId && local.id) return local;
+    return { id: "", name: entry.publicSubjectName || "Unsorted", color: entry.publicSubjectColor || "#85899a" };
+  }
+  async function loadPublicLibrary() {
+    if (!publicLibrarySettings.enabled || !apiBase || publicLibraryLoading) return;
+    const requestedBase = apiBase, pageSize = Math.max(1, Math.min(200, Number(publicLibrarySettings.pageSize) || 100));
+    const maxItems = Math.max(pageSize, Math.min(10000, Number(publicLibrarySettings.maxItems) || 5000));
+    publicLibraryLoading = true; publicLibraryError = ""; renderLibrary();
+    try {
+      const found = [], seenCursors = new Set(); let cursor = "";
+      do {
+        const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 20000);
+        let response;
+        try { response = await fetch(`${requestedBase}/library?limit=${pageSize}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, { signal: controller.signal, credentials: "omit", cache: "no-store" }); }
+        finally { clearTimeout(timer); }
+        const data = await response.json();
+        if (!response.ok || data.ok !== true || !Array.isArray(data.recordings)) throw new Error(data.error || `HTTP ${response.status}`);
+        for (const item of data.recordings) {
+          try { found.push(normalizeEpisode({ ...item, apiBaseUrl: requestedBase, publicSubjectName: item.subjectName, publicSubjectColor: item.subjectColor, isPublic: true })); } catch (_) { /* Ignore malformed catalogue rows. */ }
+          if (found.length >= maxItems) break;
+        }
+        const next = data.truncated && typeof data.cursor === "string" ? data.cursor : "";
+        if (!next || seenCursors.has(next) || found.length >= maxItems) { cursor = ""; break; }
+        seenCursors.add(next); cursor = next;
+      } while (cursor);
+      if (apiBase !== requestedBase) return;
+      publicEpisodes = Array.from(new Map(found.map(entry => [keyOf(entry), entry])).values());
+    } catch (error) {
+      if (apiBase === requestedBase) publicLibraryError = `Public library unavailable: ${error.name === "AbortError" ? "request timed out" : error.message}. Your saved links still work.`;
+    } finally {
+      if (apiBase === requestedBase) { publicLibraryLoading = false; renderSubjects(); renderLibrary(); }
+    }
+  }
   function renderSubjects() {
     fillSubjects(ui.podcastSubject); fillSubjects(ui.existingAudioSubject);
-    if (subjectFilter !== "all" && subjectFilter !== "unsorted" && !saved.subjects.some(s => s.id === subjectFilter)) subjectFilter = "all";
-    const all = [{ id: "all", name: "All recordings", color: "#5e4ce6" }, ...saved.subjects, { id: "unsorted", name: "Unsorted", color: "#85899a" }];
+    const entries = libraryEntries();
+    const knownIds = new Set(saved.subjects.map(subject => subject.id));
+    const sharedSubjects = Array.from(new Map(entries.filter(entry => entry.subjectId && !knownIds.has(entry.subjectId)).map(entry => [entry.subjectId, { id: entry.subjectId, name: entry.publicSubjectName || "Shared subject", color: entry.publicSubjectColor || "#85899a" }])).values());
+    if (subjectFilter !== "all" && subjectFilter !== "unsorted" && !knownIds.has(subjectFilter) && !sharedSubjects.some(subject => subject.id === subjectFilter)) subjectFilter = "all";
+    const all = [{ id: "all", name: "All recordings", color: "#5e4ce6" }, ...saved.subjects, ...sharedSubjects, { id: "unsorted", name: "Unsorted", color: "#85899a" }];
     const fragment = document.createDocumentFragment();
     for (const subject of all) {
-      const count = saved.episodes.filter(e => subject.id === "all" || (subject.id === "unsorted" ? !e.subjectId : e.subjectId === subject.id)).length;
+      const count = entries.filter(e => subject.id === "all" || (subject.id === "unsorted" ? !e.subjectId : e.subjectId === subject.id)).length;
       const chip = button("", "subject-chip", () => { subjectFilter = subject.id; renderSubjects(); renderLibrary(); });
       chip.style.setProperty("--subject-color", subject.color); chip.setAttribute("aria-pressed", String(subjectFilter === subject.id));
       const dot = text("span", "", "subject-dot"); dot.setAttribute("aria-hidden", "true");
       chip.append(dot, text("span", subject.name, "chip-name"), text("span", count, "chip-count")); fragment.append(chip);
     }
-    ui.subjectFilters.replaceChildren(fragment); ui.libraryCount.textContent = String(saved.episodes.length);
+    ui.subjectFilters.replaceChildren(fragment); ui.libraryCount.textContent = String(entries.length);
   }
   function renderLibrary() {
     const query = ui.librarySearch.value.trim().toLocaleLowerCase();
-    const filtered = saved.episodes.filter(e => (subjectFilter === "all" || (subjectFilter === "unsorted" ? !e.subjectId : e.subjectId === subjectFilter)) && `${e.title} ${e.fileName} ${subjectById(e.subjectId).name}`.toLocaleLowerCase().includes(query));
+    const entries = libraryEntries();
+    const filtered = entries.filter(e => (subjectFilter === "all" || (subjectFilter === "unsorted" ? !e.subjectId : e.subjectId === subjectFilter)) && `${e.title} ${e.fileName} ${displaySubject(e).name}`.toLocaleLowerCase().includes(query));
     filtered.sort(ui.librarySort.value === "title" ? (a, b) => a.title.localeCompare(b.title) : (a, b) => b.createdAt - a.createdAt);
     const fragment = document.createDocumentFragment();
     for (const entry of filtered) {
-      const key = keyOf(entry), subject = subjectById(entry.subjectId);
+      const key = keyOf(entry), subject = displaySubject(entry), locallySaved = saved.episodes.some(item => keyOf(item) === key);
       const row = text("article", "", "episode-row"); row.style.setProperty("--subject-color", subject.color);
       row.classList.toggle("is-current", Boolean(current && current.key === key));
       const icon = text("div", "\u266b", "episode-icon"); icon.setAttribute("aria-hidden", "true");
       const copy = text("div", "", "episode-copy"); copy.append(text("h3", entry.title, "episode-title"));
-      const meta = [entry.duration ? formatTime(entry.duration) : "Cloud audio", entry.size !== null ? formatSize(entry.size) : "", subject.name].filter(Boolean).join(" / ");
+      const meta = [entry.isPublic ? "Public upload" : "Saved link", entry.duration ? formatTime(entry.duration) : "Cloud audio", entry.size !== null ? formatSize(entry.size) : "", subject.name, entry.transcript ? (entry.transcript.publishedId ? "Published transcript" : "Local transcript") : ""].filter(Boolean).join(" / ");
       copy.append(text("p", meta, "episode-meta"));
       const actions = text("div", "", "episode-actions");
-      const choose = text("select", "", "episode-subject"); fillSubjects(choose, entry.subjectId); choose.setAttribute("aria-label", `Subject for ${entry.title}`);
-      choose.addEventListener("change", () => { entry.subjectId = choose.value; persist(); renderSubjects(); renderLibrary(); });
       const play = button("Listen", "button button-secondary", () => { clearListenHash(); openCloud(entry); ui.playerSection.scrollIntoView({ behavior: "smooth", block: "start" }); });
       const share = button("Share", "text-button", () => copyText(makeShareLink(entry), "Player link copied."));
-      const remove = button("Remove", "text-button text-muted", () => {
-        if (!window.confirm(`Remove "${entry.title}" from this browser's library? The audio in R2 will NOT be deleted.`)) return;
-        saved.episodes = saved.episodes.filter(e => keyOf(e) !== key); persist(); renderSubjects(); renderLibrary(); renderShare();
-      });
-      actions.append(choose, play, share, remove); row.append(icon, copy, actions); fragment.append(row);
+      if (locallySaved) {
+        const localEntry = saved.episodes.find(item => keyOf(item) === key);
+        const choose = text("select", "", "episode-subject"); fillSubjects(choose, localEntry.subjectId); choose.setAttribute("aria-label", `Personal subject for ${entry.title}`);
+        choose.addEventListener("change", () => { localEntry.subjectId = choose.value; persist(); renderSubjects(); renderLibrary(); });
+        const remove = button("Forget", "text-button text-muted", () => {
+          if (!window.confirm(`Remove "${entry.title}" from this browser's saved items? Public uploads remain visible to everyone.`)) return;
+          saved.episodes = saved.episodes.filter(e => keyOf(e) !== key); persist(); renderSubjects(); renderLibrary(); renderShare();
+        });
+        actions.append(choose, play, share, remove);
+      } else {
+        const save = button("Save", "text-button", () => { saved.episodes.unshift({ ...entry, isPublic: false }); persist(); renderSubjects(); renderLibrary(); notify("Saved to this browser for personal subjects and transcript references."); });
+        actions.append(play, share, save);
+      }
+      row.append(icon, copy, actions); fragment.append(row);
     }
     ui.episodeList.replaceChildren(fragment); show(ui.libraryEmpty, filtered.length === 0);
-    ui.libraryEmpty.querySelector("h3").textContent = saved.episodes.length ? "No recordings match this view." : "Your next idea belongs here.";
-    ui.libraryEmpty.querySelector("p").textContent = saved.episodes.length ? "Try another subject or a different search." : "Upload a recording or add a cloud audio link. Your saved recordings will appear here.";
-    ui.libraryCount.textContent = String(saved.episodes.length);
+    ui.libraryEmpty.querySelector("h3").textContent = publicLibraryLoading ? "Loading public recordings…" : publicLibraryError ? "Public library could not refresh." : entries.length ? "No recordings match this view." : "No public recordings yet.";
+    ui.libraryEmpty.querySelector("p").textContent = publicLibraryLoading ? "Reading the shared R2 catalogue." : publicLibraryError || (entries.length ? "Try another subject or a different search." : "Upload the first recording. It will appear here for every visitor.");
+    ui.libraryCount.textContent = String(entries.length);
   }
   ui.librarySearch.addEventListener("input", renderLibrary); ui.librarySort.addEventListener("change", renderLibrary);
   function openSubject(id = null) {
@@ -465,6 +577,7 @@
     const url = new URL(location.href); url.search = ""; url.hash = "";
     const parameters = new URLSearchParams({ listen: entry.id, title: entry.title });
     if (entry.apiBaseUrl !== siteAPI) parameters.set("server", entry.apiBaseUrl);
+    if (entry.transcript?.publishedId) parameters.set("transcript", entry.transcript.publishedId);
     url.hash = parameters.toString(); return url.href;
   }
   function renderShare() {
@@ -474,7 +587,7 @@
     ui.shareLink.value = makeShareLink(entry); ui.directAudioLink.href = entry.audioUrl;
     const included = saved.episodes.some(e => keyOf(e) === current.key);
     show(ui.saveSharedButton, !included);
-    ui.shareHint.textContent = /^https?:$/.test(location.protocol) ? "Recipients get the player. Subjects, bookmarks, and listening history stay in this browser." : "This page is running from a local file, so this is a direct audio link. Open your GitHub Pages site to share the styled player.";
+    ui.shareHint.textContent = /^https?:$/.test(location.protocol) ? "This audio is discoverable in the public library. Personal subjects, bookmarks, and listening history stay in this browser." : "This page is running from a local file, so this is a direct audio link. Open your GitHub Pages site to share the styled player.";
   }
   async function copyText(value, success = "Link copied.") {
     try {
@@ -503,8 +616,12 @@
       if (!base) { showError(ui.globalError, "Configure the Worker address in Settings to open this shared recording."); return; }
       // A shared link cannot silently reconfigure the upload destination.
       if (server && base !== apiBase && base !== siteAPI && !window.confirm(`This recording is hosted at ${base}. Load audio from that server? Your upload settings will NOT change.`)) return;
-      const entry = normalizeEpisode({ id, apiBaseUrl: base, title: parameters.get("title") || "Shared recording", createdAt: Date.now() });
-      const existing = saved.episodes.find(e => keyOf(e) === keyOf(entry)); openCloud(existing || entry);
+      const transcriptId = parameters.get("transcript");
+      if (transcriptId && !UUID.test(transcriptId)) throw new Error("The transcript reference is invalid.");
+      const entry = normalizeEpisode({ id, apiBaseUrl: base, title: parameters.get("title") || "Shared recording", createdAt: Date.now(), transcript: transcriptId ? { publishedId: transcriptId, status: "published" } : null });
+      const existing = saved.episodes.find(e => keyOf(e) === keyOf(entry));
+      if (existing && entry.transcript?.publishedId && !existing.transcript?.publishedId) existing.transcript = entry.transcript;
+      openCloud(existing || entry);
     } catch (error) { showError(ui.globalError, `Could not open this player link: ${error.message}`); }
   }
   window.addEventListener("hashchange", loadSharedLink);
@@ -535,13 +652,13 @@
       const base = normalizeBase(ui.apiBaseInput.value);
       apiBase = base; apiOverride = base;
       try { localStorage.setItem(CONNECTION_KEY, JSON.stringify(base)); } catch (_) { disableStorage(); }
-      updateConnectionUI(); ui.settingsDialog.close(); notify("Connection changed for this browser only. Edit config.js to change the site default.");
+      publicEpisodes = []; publicLibraryError = ""; updateConnectionUI(); renderSubjects(); renderLibrary(); loadPublicLibrary(); ui.settingsDialog.close(); notify("Connection and public catalogue changed for this browser only. Edit config.js to change the site default.");
       if (location.hash) loadSharedLink();
     } catch (error) { showError(ui.settingsError, error.message); }
   });
   ui.resetConnection.addEventListener("click", () => {
     try { localStorage.removeItem(CONNECTION_KEY); } catch (_) { /* A session-only reset is still useful. */ }
-    apiOverride = undefined; apiBase = siteAPI; ui.apiBaseInput.value = siteAPI; updateConnectionUI();
+    apiOverride = undefined; apiBase = siteAPI; publicEpisodes = []; publicLibraryError = ""; ui.apiBaseInput.value = siteAPI; updateConnectionUI(); renderSubjects(); renderLibrary(); loadPublicLibrary();
     ui.connectionResult.textContent = "Using the default in config.js. This change is applied now.";
   });
   ui.testConnection.addEventListener("click", async () => {
@@ -567,22 +684,33 @@
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob);
     const anchor = text("a", ""); anchor.href = url; anchor.download = name; document.body.append(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
-  ui.exportLibrary.addEventListener("click", () => {
-    persistPosition(true); downloadJSON(`audio-library-${new Date().toISOString().slice(0, 10)}.json`, { schema: "audio-library-backup", version: 1, exportedAt: new Date().toISOString(), data: saved });
-    notify("Library backup exported. It contains links and metadata, not the audio files.");
+  ui.exportLibrary.addEventListener("click", async () => {
+    persistPosition(true);
+    const transcripts = [];
+    for (const id of new Set(saved.episodes.map(entry => entry.transcript?.localId).filter(Boolean))) {
+      try { const record = await processing.transcriptStore.get(id); if (record?.transcript) transcripts.push({ id, transcript: record.transcript }); } catch (_) { /* Export remains useful without an unavailable body. */ }
+    }
+    downloadJSON(`audio-library-${new Date().toISOString().slice(0, 10)}.json`, { schema: "audio-library-backup", version: 2, exportedAt: new Date().toISOString(), data: saved, transcripts });
+    notify(`Library backup exported${transcripts.length ? ` with ${transcripts.length} local transcript(s)` : ""}. Audio files are not included.`);
   });
   ui.importLibraryButton.addEventListener("click", () => ui.importLibraryFile.click());
   ui.importLibraryFile.addEventListener("change", async () => {
     const file = ui.importLibraryFile.files[0]; ui.importLibraryFile.value = ""; if (!file) return;
     try {
-      if (file.size > 8 * 1024 * 1024) throw new Error("This backup is too large. Import an Audio Library JSON backup smaller than 8 MiB.");
+      if (file.size > 32 * 1024 * 1024) throw new Error("This backup is too large. Import an Audio Library JSON backup smaller than 32 MiB.");
       const backup = JSON.parse(await file.text());
-      if (backup.schema !== "audio-library-backup" || backup.version !== 1 || !backup.data) throw new Error("This is not a supported Audio Library backup.");
+      if (backup.schema !== "audio-library-backup" || ![1, 2].includes(backup.version) || !backup.data) throw new Error("This is not a supported Audio Library backup.");
       const incoming = normalizeState(backup.data);
       if (!window.confirm(`Merge ${incoming.episodes.length} cloud recording(s) and ${incoming.subjects.length} subject(s) into this browser? No audio will be uploaded.`)) return;
       saved.subjects = Array.from(new Map([...saved.subjects, ...incoming.subjects].map(s => [s.id, s])).values());
       saved.episodes = Array.from(new Map([...saved.episodes, ...incoming.episodes].map(e => [keyOf(e), e])).values());
       Object.assign(saved.positions, incoming.positions); Object.assign(saved.bookmarks, incoming.bookmarks);
+      if (backup.version === 2 && Array.isArray(backup.transcripts)) {
+        for (const item of backup.transcripts.slice(0, 5000)) {
+          if (!item || !UUID.test(item.id || "")) continue;
+          try { await processing.transcriptStore.put(processing.normalizeTranscript(item.transcript), item.id.toLowerCase()); } catch (_) { /* Invalid transcript bodies do not block library metadata. */ }
+        }
+      }
       persist(); renderSubjects(); renderLibrary(); renderBookmarks(); renderShare(); notify("Library merged. Audio files remain at their original cloud addresses.");
     } catch (error) { showError(ui.globalError, `Import failed: ${error.message}`); }
   });
@@ -603,6 +731,343 @@
     if (!saved.bookmarks[current.key]) saved.bookmarks[current.key] = [];
     saved.bookmarks[current.key].push({ id: uid(), time, label: cleanTitle(label, "Bookmark") }); persist(); renderBookmarks();
   });
+
+  function openUploadPanel() {
+    ui.uploadPanel.classList.add("is-open"); ui.uploadPanel.setAttribute("aria-hidden", "false");
+    ui.openUploadButton.setAttribute("aria-expanded", "true"); show(ui.uploadBackdrop); document.body.style.overflow = "hidden";
+    setTimeout(() => ui.audioFile.focus(), 0);
+  }
+  function closeUploadPanel() {
+    ui.uploadPanel.classList.remove("is-open"); ui.uploadPanel.setAttribute("aria-hidden", "true");
+    ui.openUploadButton.setAttribute("aria-expanded", "false"); show(ui.uploadBackdrop, false); document.body.style.overflow = "";
+  }
+  ui.openUploadButton.addEventListener("click", openUploadPanel); ui.heroUploadButton.addEventListener("click", openUploadPanel);
+  ui.closeUploadButton.addEventListener("click", closeUploadPanel); ui.uploadBackdrop.addEventListener("click", closeUploadPanel);
+  document.addEventListener("keydown", event => { if (event.key === "Escape" && ui.uploadPanel.classList.contains("is-open") && !document.querySelector("dialog[open]")) closeUploadPanel(); });
+
+  function validPresets() {
+    const seen = new Set();
+    return (Array.isArray(compressionSettings.presets) ? compressionSettings.presets : []).filter(preset => {
+      if (!preset || !/^[a-z0-9-]{1,40}$/.test(preset.id || "") || seen.has(preset.id)) return false;
+      if (preset.id !== "original" && (!Number.isFinite(preset.bitrateKbps) || preset.bitrateKbps < 8 || preset.bitrateKbps > 320 || !["opus", "aac"].includes(preset.codec))) return false;
+      seen.add(preset.id); return true;
+    });
+  }
+  const compressionPresets = validPresets();
+  function presetById(id) { return compressionPresets.find(preset => preset.id === id) || compressionPresets.find(preset => preset.id === "original"); }
+  function renderCompressionPresets() {
+    ui.compressionPresets.replaceChildren();
+    if (!compressionSettings.enabled || !audioProcessor || !compressionPresets.length) {
+      ui.compressionPresets.append(text("p", "Audio optimisation is disabled in config.js.", "small-copy")); ui.optimiseButton.disabled = true; return;
+    }
+    if (!presetById(selectedPreset)) selectedPreset = "original";
+    for (const preset of compressionPresets) {
+      const option = button("", "preset-option", () => { if (heavyJobActive) return; selectedPreset = preset.id; renderCompressionPresets(); updateCompressionUI(); });
+      option.setAttribute("role", "radio"); option.setAttribute("aria-checked", String(selectedPreset === preset.id));
+      option.append(text("strong", preset.label), text("span", preset.description || (preset.id === "original" ? "No conversion" : `${preset.codec} · ${preset.bitrateKbps} kbps`)));
+      ui.compressionPresets.append(option);
+    }
+  }
+  function resetProcessedAudio() {
+    if (processedURL) URL.revokeObjectURL(processedURL);
+    processedURL = null; processedFile = null; ui.processedPreview.removeAttribute("src"); ui.processedPreview.load();
+    show(ui.processedResult, false); show(ui.compressionStatus, false); show(ui.processedAdvice, false);
+    ui.compressionProgress.value = 0; ui.compressionPercent.textContent = ""; originalDuration = null;
+    if (originalFile) uploadCandidate = originalFile;
+  }
+  function selectUploadCandidate(file) {
+    if (!file) return;
+    uploadCandidate = file; draftFile = file;
+    ui.uploadStatus.classList.remove("is-success");
+    ui.uploadStatus.textContent = `${file === processedFile ? "Optimised" : "Original"} version selected for upload: ${formatSize(file.size)}${file.size > maxBytes ? ` — above the ${formatSize(maxBytes)} cloud limit.` : "."}`;
+    updateUploadButton();
+  }
+  function updateCompressionUI() {
+    const preset = presetById(selectedPreset);
+    ui.optimiseButton.disabled = !originalFile || !preset || preset.id === "original" || heavyJobActive || !compressionSettings.enabled;
+    ui.optimiseButton.textContent = preset && preset.id !== "original" ? `Optimise as ${preset.label}` : "Choose an optimisation preset";
+    renderCompressionPresets();
+  }
+  async function runOptimisation() {
+    const preset = presetById(selectedPreset);
+    if (!originalFile || !preset || preset.id === "original" || heavyJobActive) return;
+    if (Number.isFinite(originalDuration) && originalDuration > (Number(compressionSettings.maxDurationSeconds) || 21600)) { showError(ui.fileError, "This recording exceeds the configured six-hour device-processing safeguard. You can still preview or upload the original if it fits the cloud limit."); return; }
+    resetProcessedAudio(); heavyJobActive = true; processingJob = "compression"; updateCompressionUI(); updateUploadButton();
+    show(ui.compressionStatus); show(ui.cancelOptimise); ui.compressionProgress.value = 0;
+    try {
+      const output = await audioProcessor.optimize(originalFile, preset, event => {
+        ui.compressionMessage.textContent = event.message || event.state;
+        if (Number.isFinite(event.progress)) { ui.compressionProgress.value = event.progress * 100; ui.compressionPercent.textContent = `${Math.round(event.progress * 100)}%`; }
+      });
+      processedFile = output; processedURL = URL.createObjectURL(output); ui.processedPreview.src = processedURL;
+      const saving = (1 - output.size / originalFile.size) * 100;
+      ui.originalSize.textContent = formatSize(originalFile.size); ui.processedSize.textContent = formatSize(output.size);
+      ui.processedSaving.textContent = saving >= 0 ? `${saving.toFixed(1)}%` : `${Math.abs(saving).toFixed(1)}% larger`;
+      ui.processedFormat.textContent = `${preset.codec === "opus" ? "Opus in WebM" : "AAC in M4A"}, mono, target about ${preset.bitrateKbps} kbps. Actual quality and bitrate can vary.`;
+      ui.processedAdvice.textContent = saving < 0 ? "The optimised file is larger. Keep the original unless you need the selected format." : `Measured saving: ${formatSize(originalFile.size - output.size)}. Preview before uploading.`;
+      show(ui.processedAdvice); show(ui.processedResult); ui.compressionProgress.value = 100; ui.compressionPercent.textContent = "100%";
+      ui.compressionMessage.textContent = "Optimisation complete";
+      selectUploadCandidate(saving >= 0 ? output : originalFile);
+    } catch (error) {
+      if (error.name === "AbortError") ui.compressionMessage.textContent = "Optimisation cancelled. The original is still available.";
+      else { ui.compressionMessage.textContent = `Optimisation failed: ${error.message}`; showError(ui.fileError, "Could not optimise this audio. It may be corrupt, use an unavailable codec, or exceed this device's memory. You can still use the original."); }
+      selectUploadCandidate(originalFile);
+    } finally {
+      heavyJobActive = false; processingJob = null; show(ui.cancelOptimise, false); updateCompressionUI(); updateUploadButton();
+    }
+  }
+  ui.optimiseButton.addEventListener("click", runOptimisation); ui.retryOptimise.addEventListener("click", runOptimisation);
+  ui.cancelOptimise.addEventListener("click", () => { if (processingJob === "compression") audioProcessor.cancel(); });
+  ui.useProcessed.addEventListener("click", () => processedFile && selectUploadCandidate(processedFile));
+  ui.useOriginal.addEventListener("click", () => originalFile && selectUploadCandidate(originalFile));
+  ui.downloadProcessed.addEventListener("click", () => { if (processedFile) downloadBlob(processedFile.name, processedFile); });
+  ui.processedPreview.addEventListener("loadedmetadata", () => {
+    const duration = ui.processedPreview.duration;
+    if (Number.isFinite(originalDuration) && Number.isFinite(duration) && Math.abs(duration - originalDuration) > 0.35) {
+      ui.processedAdvice.textContent += ` Duration differs by ${Math.abs(duration - originalDuration).toFixed(2)} seconds; keep the original if timeline fidelity matters.`;
+    }
+  });
+  ui.optimiseCloudButton.addEventListener("click", async () => {
+    if (!current || current.kind !== "cloud" || heavyJobActive) return;
+    if (!window.confirm("Download this cloud recording for local optimisation? The existing R2 object and its links will stay unchanged; uploading the result creates a new recording.")) return;
+    const entry = current.entry; ui.optimiseCloudButton.disabled = true;
+    try {
+      const response = await fetch(entry.audioUrl, { credentials: "omit" });
+      if (!response.ok) throw new Error(`Download failed (HTTP ${response.status}).`);
+      const blob = await response.blob(), file = new File([blob], entry.fileName || `${entry.title}.${extension(entry.fileName) || "audio"}`, { type: entry.type || blob.type || "audio/mpeg", lastModified: Date.now() });
+      chooseFile(file); openUploadPanel(); notify("Cloud recording downloaded for a new optimised copy. The original remains unchanged.");
+    } catch (error) { showError(ui.playbackError, error.message); }
+    finally { ui.optimiseCloudButton.disabled = false; }
+  });
+
+  function currentRecordingIdentity() {
+    if (!current) throw new Error("Open a recording first.");
+    if (current.kind === "cloud") return processing.transcriptIdentity({ kind: "cloud", id: current.entry.id, apiBaseUrl: current.entry.apiBaseUrl });
+    const source = current.sourceFile || originalFile || current.file;
+    return processing.transcriptIdentity({ kind: "local", name: source.name, size: source.size, lastModified: source.lastModified });
+  }
+  function updateEpisodeTranscript(ref) {
+    if (!current) return;
+    currentTranscriptRef = ref;
+    if (current.kind === "cloud") {
+      current.entry.transcript = ref;
+      const entry = saved.episodes.find(item => keyOf(item) === current.key);
+      if (entry) entry.transcript = ref;
+      persist(); renderLibrary(); renderShare();
+    } else current.transcriptRef = ref;
+  }
+  async function saveCurrentTranscript(transcript) {
+    const normalized = processing.normalizeTranscript(transcript, { recordingIdentity: currentRecordingIdentity(), duration: Number.isFinite(ui.audioPlayer.duration) ? ui.audioPlayer.duration : null });
+    const id = currentTranscriptRef?.localId || uid();
+    await processing.transcriptStore.put(normalized, id);
+    currentTranscript = normalized;
+    updateEpisodeTranscript({ localId: id, publishedId: "", sourceIdentity: normalized.sourceIdentity, status: "local", updatedAt: Date.now() });
+    renderTranscriptBody();
+  }
+  async function renderCurrentTranscript() {
+    const token = ++transcriptRenderToken;
+    currentTranscript = null;
+    show(ui.transcriptReady, false); show(ui.transcriptProgressWrap, false); showError(ui.transcriptError, "");
+    ui.transcriptBadge.textContent = currentTranscriptRef?.publishedId ? "Published" : currentTranscriptRef?.localId ? "Local" : "Not generated";
+    ui.generateTranscript.disabled = !transcriptionSettings.enabled || !current;
+    ui.publishTranscript.disabled = true;
+    if (!current || !currentTranscriptRef) return;
+    try {
+      if (currentTranscriptRef.localId) {
+        const record = await processing.transcriptStore.get(currentTranscriptRef.localId);
+        if (record?.transcript) currentTranscript = processing.normalizeTranscript(record.transcript, { recordingIdentity: currentRecordingIdentity() });
+      }
+      if (!currentTranscript && currentTranscriptRef.publishedId && current.kind === "cloud") {
+        ui.transcriptStatus.textContent = "Loading published transcript…"; show(ui.transcriptProgressWrap);
+        const controller = new AbortController(), timer = setTimeout(() => controller.abort(), Number(publishingSettings.timeoutMs) || 60000);
+        try {
+          const response = await fetch(`${current.entry.apiBaseUrl}/transcripts/${currentTranscriptRef.publishedId}`, { signal: controller.signal, credentials: "omit" });
+          const data = await response.json();
+          if (!response.ok || data.ok !== true) throw new Error(data.error || `HTTP ${response.status}`);
+          if (data.audioId !== current.entry.id) throw new Error("The published transcript belongs to a different recording.");
+          currentTranscript = processing.normalizeTranscript(data.transcript, { recordingIdentity: currentRecordingIdentity() });
+        } finally { clearTimeout(timer); }
+      }
+      if (token !== transcriptRenderToken) return;
+      show(ui.transcriptProgressWrap, false);
+      if (currentTranscript) renderTranscriptBody();
+    } catch (error) {
+      if (token === transcriptRenderToken) { show(ui.transcriptProgressWrap, false); showError(ui.transcriptError, `Transcript unavailable: ${error.message} Audio playback is unaffected.`); }
+    }
+  }
+  function renderTranscriptBody() {
+    if (!currentTranscript) return;
+    ui.transcriptBadge.textContent = currentTranscriptRef?.publishedId ? "Published" : "Local only";
+    ui.publishHint.textContent = currentTranscriptRef?.publishedId ? "Published through an unlisted link. Publish again after corrections to create a new immutable copy." : "Only this browser can see it until you explicitly publish it.";
+    ui.publishTranscript.textContent = currentTranscriptRef?.publishedId ? "Publish a new copy" : "Publish with recording";
+    ui.publishTranscript.disabled = !(current?.kind === "cloud" && publishingSettings.enabled);
+    show(ui.transcriptReady); renderTranscriptSegments();
+  }
+  function renderTranscriptSegments() {
+    ui.transcriptSegments.replaceChildren(); if (!currentTranscript) return;
+    const query = ui.transcriptSearch.value.trim().toLocaleLowerCase(); let matches = 0;
+    for (const segment of currentTranscript.segments) {
+      if (query && !segment.text.toLocaleLowerCase().includes(query)) continue;
+      matches++;
+      const timed = segment.start !== null && segment.end !== null;
+      const row = text(timed ? "button" : "div", "", "transcript-segment");
+      if (timed) { row.type = "button"; row.dataset.start = String(segment.start); row.addEventListener("click", () => { seekTo(segment.start); playSafely(); }); }
+      const time = text("span", timed ? formatTime(segment.start) : "TEXT", "segment-time");
+      const body = text("span", "", "segment-text");
+      if (!query) body.textContent = segment.text;
+      else {
+        const lower = segment.text.toLocaleLowerCase(), index = lower.indexOf(query);
+        body.append(document.createTextNode(segment.text.slice(0, index)), text("mark", segment.text.slice(index, index + query.length)), document.createTextNode(segment.text.slice(index + query.length)));
+      }
+      row.append(time, body); ui.transcriptSegments.append(row);
+    }
+    if (!matches) ui.transcriptSegments.append(text("p", "No transcript text matches this search.", "small-copy"));
+  }
+  ui.transcriptSearch.addEventListener("input", renderTranscriptSegments);
+  ui.audioPlayer.addEventListener("timeupdate", () => {
+    if (!currentTranscript) return;
+    const now = ui.audioPlayer.currentTime; let active = null;
+    for (const element of ui.transcriptSegments.querySelectorAll("[data-start]")) {
+      const start = Number(element.dataset.start), next = element.nextElementSibling?.dataset.start;
+      const isActive = now >= start && (!next || now < Number(next)); element.classList.toggle("is-current", isActive); if (isActive) active = element;
+    }
+    if (active && ui.transcriptFollow.checked && !ui.audioPlayer.paused && Date.now() > transcriptManualUntil) active.scrollIntoView({ block: "nearest" });
+  });
+  for (const eventName of ["wheel", "pointerdown", "touchstart"]) ui.transcriptSegments.addEventListener(eventName, () => { transcriptManualUntil = Date.now() + 8000; }, { passive: true });
+  function workerRequest(worker, jobId, message, transfer = []) {
+    return new Promise((resolve, reject) => {
+      const chunkId = message.chunkId;
+      const timer = setTimeout(() => { transcriptionPending.delete(chunkId); reject(new Error("Transcription processing timed out on this audio part.")); }, 15 * 60 * 1000);
+      transcriptionPending.set(chunkId, { resolve: value => { clearTimeout(timer); resolve(value); }, reject: error => { clearTimeout(timer); reject(error); } });
+      worker.postMessage({ ...message, jobId }, transfer);
+    });
+  }
+  function createTranscriptionWorker(jobId, preferWebGPU) {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(new URL(transcriptionSettings.workerUrl, document.baseURI), { type: "module" });
+      transcriptionWorker = worker; let engine = "";
+      const failInit = error => { clearTimeout(timer); if (transcriptionInitReject === failInit) transcriptionInitReject = null; reject(error); };
+      transcriptionInitReject = failInit;
+      const timer = setTimeout(() => { worker.terminate(); if (transcriptionWorker === worker) transcriptionWorker = null; failInit(new Error("The transcription model download or initialisation timed out.")); }, Number(transcriptionSettings.downloadTimeoutMs) || 1200000);
+      worker.onmessage = event => {
+        const data = event.data || {}; if (data.jobId !== jobId) return;
+        if (data.type === "model-progress") {
+          const measured = data.total > 0 ? Math.round(data.loaded / data.total * 100) : Math.round(data.progress || 0);
+          ui.transcriptStatus.textContent = data.file ? `Downloading model: ${data.file.split("/").pop()}` : "Loading transcription model…";
+          ui.transcriptProgress.value = measured; ui.transcriptPercent.textContent = data.total > 0 ? `${measured}%` : "";
+        } else if (data.type === "engine") {
+          if (data.state === "webgpu-fallback") ui.transcriptStatus.textContent = "WebGPU unavailable; falling back to CPU/WASM…";
+          else ui.transcriptStatus.textContent = data.state === "trying-webgpu" ? "Initialising WebGPU…" : "Initialising CPU/WASM…";
+        } else if (data.type === "ready") { clearTimeout(timer); transcriptionInitReject = null; engine = data.engine; resolve({ worker, engine }); }
+        else if (data.type === "chunk-result") { const pending = transcriptionPending.get(data.chunkId); transcriptionPending.delete(data.chunkId); pending?.resolve(data); }
+        else if (data.type === "error") {
+          const pending = transcriptionPending.get(data.chunkId); transcriptionPending.delete(data.chunkId);
+          if (pending) pending.reject(new Error(data.message)); else failInit(new Error(data.message));
+        }
+      };
+      worker.onerror = event => failInit(new Error(event.message || "The transcription worker failed to load."));
+      worker.postMessage({ type: "init", jobId, config: { ...transcriptionSettings, preferWebGPU } });
+    });
+  }
+  async function getTranscriptionSource(jobId) {
+    if (current.kind === "local") return { file: originalFile || current.sourceFile || current.file, sourceIdentity: currentRecordingIdentity(), sourceLabel: "original local audio" };
+    ui.transcriptStatus.textContent = "Downloading this recording for local processing…";
+    const response = await fetch(current.entry.audioUrl, { credentials: "omit", signal: transcriptionAbortController?.signal });
+    if (jobId !== transcriptionJob) throw new DOMException("Cancelled", "AbortError");
+    if (!response.ok) throw new Error(`Audio download failed (HTTP ${response.status}).`);
+    const blob = await response.blob(), max = Number(transcriptionSettings.maxSourceBytes) || 300 * 1024 * 1024;
+    if (blob.size > max) throw new Error(`This device-processing build limits downloaded sources to ${formatSize(max)}.`);
+    return { file: new File([blob], current.entry.fileName || "cloud-recording", { type: current.entry.type || blob.type || "audio/mpeg" }), sourceIdentity: currentRecordingIdentity(), sourceLabel: "downloaded saved audio" };
+  }
+  async function generateTranscript() {
+    if (!current || heavyJobActive || !transcriptionSettings.enabled || !audioProcessor) return;
+    if (!metadataReady || !Number.isFinite(ui.audioPlayer.duration)) { showError(ui.transcriptError, "Wait for the recording duration to load before transcribing."); return; }
+    if (ui.audioPlayer.duration > (Number(transcriptionSettings.maxDurationSeconds) || 21600)) { showError(ui.transcriptError, "This recording exceeds the configured six-hour local transcription safeguard. Import a transcript instead."); return; }
+    const jobId = ++transcriptionJob, recordingKey = current.key, duration = ui.audioPlayer.duration;
+    transcriptionAbortController = new AbortController();
+    heavyJobActive = true; processingJob = "transcription"; show(ui.cancelTranscript); show(ui.transcriptProgressWrap); showError(ui.transcriptError, "");
+    ui.transcriptBadge.textContent = "Processing"; ui.generateTranscript.disabled = true; ui.transcriptProgress.value = 0; ui.transcriptPercent.textContent = "";
+    try {
+      const source = await getTranscriptionSource(jobId);
+      ui.transcriptStatus.textContent = "Loading the English Whisper model…";
+      let asr = await createTranscriptionWorker(jobId, Boolean(transcriptionSettings.preferWebGPU));
+      let segments = [], texts = [], retriedOnWasm = asr.engine === "wasm";
+      await audioProcessor.decodeChunks(source.file, { duration, chunkSeconds: transcriptionSettings.chunkSeconds, overlapSeconds: transcriptionSettings.overlapSeconds }, async (samples, part) => {
+        if (jobId !== transcriptionJob || current?.key !== recordingKey) throw new DOMException("Cancelled", "AbortError");
+        const chunkId = `${jobId}:${part.index}`;
+        ui.transcriptStatus.textContent = `Transcribing part ${part.index + 1} of ${part.total} (${asr.engine.toUpperCase()}; estimated progress)…`;
+        ui.transcriptProgress.value = part.index / part.total * 100; ui.transcriptPercent.textContent = `~${Math.round(part.index / part.total * 100)}%`;
+        let result; const retryCopy = asr.engine === "webgpu" ? samples.slice() : null;
+        try { result = await workerRequest(asr.worker, jobId, { type: "chunk", chunkId, audio: samples.buffer }, [samples.buffer]); }
+        catch (error) {
+          if (asr.engine !== "webgpu" || retriedOnWasm) throw error;
+          asr.worker.terminate(); transcriptionWorker = null; retriedOnWasm = true;
+          ui.transcriptStatus.textContent = "WebGPU processing failed; restarting this part on CPU/WASM…";
+          asr = await createTranscriptionWorker(jobId, false);
+          const retrySamples = retryCopy;
+          result = await workerRequest(asr.worker, jobId, { type: "chunk", chunkId: `${chunkId}:retry`, audio: retrySamples.buffer }, [retrySamples.buffer]);
+        }
+        texts.push(result.text); segments = processing.reconcileSegments(segments, result.segments, part.start, duration);
+        ui.transcriptProgress.value = (part.index + 1) / part.total * 100; ui.transcriptPercent.textContent = `${Math.round((part.index + 1) / part.total * 100)}%`;
+      }, event => { if (event.state === "loading-engine") ui.transcriptStatus.textContent = "Loading the local audio decoder…"; });
+      if (jobId !== transcriptionJob || current?.key !== recordingKey) throw new DOMException("Cancelled", "AbortError");
+      const transcript = { schemaVersion: 1, recordingIdentity: currentRecordingIdentity(), sourceIdentity: source.sourceIdentity, language: transcriptionSettings.language || "en", engine: `transformers.js/${asr.engine}`, model: transcriptionSettings.modelId, modelRevision: transcriptionSettings.modelRevision, generatedAt: new Date().toISOString(), duration, text: segments.length ? segments.map(item => item.text).join(" ") : texts.join(" "), segments };
+      await saveCurrentTranscript(transcript); ui.transcriptStatus.textContent = `Ready — generated locally from ${source.sourceLabel}.`; ui.transcriptBadge.textContent = "Local only";
+    } catch (error) {
+      if (error.name === "AbortError") ui.transcriptStatus.textContent = "Transcription cancelled. Any earlier valid transcript was kept.";
+      else showError(ui.transcriptError, `Transcription failed: ${error.message} You can retry, use CPU/WASM fallback, or import JSON, SRT, VTT, or plain TXT.`);
+    } finally {
+      if (transcriptionWorker) transcriptionWorker.terminate(); transcriptionWorker = null; transcriptionPending.clear();
+      transcriptionInitReject = null;
+      transcriptionAbortController = null;
+      heavyJobActive = false; processingJob = null; show(ui.cancelTranscript, false); ui.generateTranscript.disabled = !current; updateUploadButton(); updateCompressionUI();
+    }
+  }
+  ui.generateTranscript.addEventListener("click", generateTranscript);
+  ui.cancelTranscript.addEventListener("click", () => {
+    if (processingJob !== "transcription") return;
+    transcriptionJob++; transcriptionAbortController?.abort(); transcriptionAbortController = null; transcriptionWorker?.terminate(); transcriptionWorker = null; transcriptionInitReject?.(new DOMException("Cancelled", "AbortError")); transcriptionInitReject = null; audioProcessor?.cancel();
+    for (const pending of transcriptionPending.values()) pending.reject(new DOMException("Cancelled", "AbortError")); transcriptionPending.clear();
+  });
+  ui.importTranscriptButton.addEventListener("click", () => { if (current) ui.importTranscriptFile.click(); else notify("Open a recording before importing its transcript."); });
+  ui.importTranscriptFile.addEventListener("change", async () => {
+    const file = ui.importTranscriptFile.files[0]; ui.importTranscriptFile.value = ""; if (!file || !current) return;
+    try { await saveCurrentTranscript(await processing.importTranscriptFile(file, { recordingIdentity: currentRecordingIdentity(), duration: Number.isFinite(ui.audioPlayer.duration) ? ui.audioPlayer.duration : null })); notify("Transcript imported and stored in this browser."); }
+    catch (error) { showError(ui.transcriptError, `Transcript import failed: ${error.message}`); }
+  });
+  function downloadBlob(name, body, type) {
+    const blob = body instanceof Blob ? body : new Blob([body], { type: type || "application/octet-stream" }); const url = URL.createObjectURL(blob);
+    const anchor = text("a", ""); anchor.href = url; anchor.download = name; document.body.append(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000);
+  }
+  ui.copyTranscript.addEventListener("click", () => currentTranscript && copyText(currentTranscript.text, "Transcript copied."));
+  document.querySelectorAll(".transcript-export").forEach(control => control.addEventListener("click", () => {
+    if (!currentTranscript) return;
+    try { const output = processing.exportTranscript(currentTranscript, control.dataset.format); downloadBlob(`${cleanTitle(current?.title, "transcript").replace(/[^a-z0-9 _-]/gi, "").trim() || "transcript"}.${output.extension}`, output.body, output.type); }
+    catch (error) { showError(ui.transcriptError, error.message); }
+  }));
+  ui.clearModelCache.addEventListener("click", async () => {
+    if (heavyJobActive) { notify("Cancel active processing before clearing the model cache."); return; }
+    try { const cleared = await processing.clearModelCache(transcriptionSettings.cacheKey); notify(cleared ? "Downloaded transcription assets were cleared. They will download again on next use." : "No downloaded transcription cache was found. Browser storage may already have evicted it."); }
+    catch (_) { notify("This browser did not allow the model cache to be cleared here. Use site-data settings instead."); }
+  });
+  ui.publishTranscript.addEventListener("click", async () => {
+    if (!currentTranscript || current?.kind !== "cloud" || !publishingSettings.enabled || heavyJobActive) return;
+    if (!window.confirm("Publish this transcript as an unlisted R2 sidecar? Anyone with the shared link can read it. This is not private authentication, and publishing cannot overwrite the old copy.")) return;
+    heavyJobActive = true; processingJob = "publishing"; ui.publishTranscript.disabled = true; ui.publishTranscript.textContent = "Publishing…";
+    try {
+      const body = JSON.stringify({ audioId: current.entry.id, transcript: currentTranscript });
+      const max = Number(publishingSettings.maxBytes) || 8 * 1024 * 1024; if (new Blob([body]).size > max) throw new Error(`Published transcripts are limited to ${formatSize(max)}.`);
+      const controller = new AbortController(), timer = setTimeout(() => controller.abort(), Number(publishingSettings.timeoutMs) || 60000);
+      let response;
+      try { response = await fetch(`${current.entry.apiBaseUrl}/transcripts`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: controller.signal, credentials: "omit" }); }
+      finally { clearTimeout(timer); }
+      const result = await response.json(); if (!response.ok || result.ok !== true || !UUID.test(result.id || "")) throw new Error(result.error || `Publishing failed (HTTP ${response.status}).`);
+      updateEpisodeTranscript({ ...currentTranscriptRef, publishedId: result.id.toLowerCase(), status: "published", updatedAt: Date.now() });
+      renderTranscriptBody(); notify("Transcript published. Copy the updated player link to share it.");
+    } catch (error) { showError(ui.transcriptError, `Transcript publishing failed: ${error.name === "AbortError" ? "request timed out" : error.message}. The audio and local transcript were kept; retry does not re-upload audio.`); }
+    finally { heavyJobActive = false; processingJob = null; renderTranscriptBody(); updateUploadButton(); }
+  });
+
   function setSleep(minutes) {
     clearInterval(sleepInterval); sleepInterval = null; sleepDeadline = minutes > 0 ? Date.now() + minutes * 60000 : 0;
     ui.sleepTimer.value = String(minutes); show(ui.sleepStatus, minutes > 0);
@@ -631,13 +1096,16 @@
     for (const [action, handler] of Object.entries(handlers)) { try { navigator.mediaSession.setActionHandler(action, handler); } catch (_) { /* Browser may not support this action. */ } }
   }
   window.addEventListener("pagehide", () => persistPosition(true));
-  window.addEventListener("beforeunload", event => { if (uploadXHR) { event.preventDefault(); event.returnValue = ""; } });
+  window.addEventListener("beforeunload", event => { if (uploadXHR || heavyJobActive) { event.preventDefault(); event.returnValue = ""; } });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") persistPosition(true);
     if (sleepDeadline && Date.now() >= sleepDeadline) { ui.audioPlayer.pause(); setSleep(0); }
   });
   document.querySelectorAll("[data-app-name]").forEach(element => { element.textContent = appName; });
   document.title = `${appName} - Your podcasts, your pace`;
+  if (!processing) showError(ui.globalError, "Processing modules did not load. Replace all frontend files together; playback and the existing library may still work.");
+  if (!transcriptionSettings.enabled) { ui.transcriptPrivacy.textContent = "Local transcription is disabled in config.js. You can still import a transcript."; ui.generateTranscript.disabled = true; }
+  else ui.transcriptPrivacy.textContent = `Optional local AI. First use downloads the pinned English model ${transcriptionSettings.modelId || "Whisper"}; browser cache may be evicted. Audio is not sent to an AI service.`;
   ui.speed.value = String(saved.speed); ui.rememberPosition.checked = saved.remember; restoreSpeed();
-  updateConnectionUI(); renderSubjects(); renderLibrary(); loadSharedLink();
+  renderCompressionPresets(); updateCompressionUI(); updateConnectionUI(); renderSubjects(); renderLibrary(); loadSharedLink(); loadPublicLibrary();
 })();
