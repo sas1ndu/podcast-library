@@ -405,3 +405,64 @@ input[type="color"] { width: 60px; height: 40px; padding: 3px; border: 1px solid
   .share-section .copy-row .button { padding-left: 13px; padding-right: 13px; }
   dialog { padding: 21px; } .field-heading .text-button { font-size: 11px; }
 }
+
+/* Final playlist surfaces. Keep these after the legacy component rules so the
+ * public catalogue cannot fall back to light cards on the dark application. */
+.library-toolbar .text-input,
+.library-toolbar select {
+  background: #111116;
+  color: #f7f6fb;
+  border-color: #393741;
+}
+.library-toolbar .text-input::placeholder { color: #85818f; }
+.subject-chip {
+  background: #18181e;
+  color: #d0ccd7;
+  border-color: #36343e;
+}
+.subject-chip:hover { background: #202027; border-color: #4a4655; }
+.subject-chip[aria-pressed="true"] {
+  background: #292433;
+  color: #ffffff;
+  border-color: var(--subject-color, var(--accent));
+  box-shadow: inset 0 0 0 1px var(--subject-color, var(--accent));
+}
+.count-badge { background: #2c2540; color: #cfc4ff; }
+.episode-row {
+  background: #17171d;
+  color: #f7f6fb;
+  border-color: #2d2c36;
+  box-shadow: 0 8px 26px #00000018;
+  transition: background-color .16s ease, border-color .16s ease, transform .16s ease;
+}
+.episode-row:hover { background: #1e1e25; border-color: #413e49; transform: translateY(-1px); }
+.episode-row.is-current {
+  background: #25202f;
+  border-color: #745fc0;
+  box-shadow: inset 3px 0 0 var(--subject-color, var(--accent)), 0 10px 30px #0003;
+}
+.episode-icon {
+  background: #24232c;
+  border-color: #3b3944;
+  color: var(--subject-color, #a996ff);
+}
+.episode-title { color: #f6f3fa; font-weight: 700; }
+.episode-meta { color: #aaa5b5; }
+.episode-subject { background: #101014; color: #f3f1f7; border-color: #403d48; }
+.episode-actions .button-secondary {
+  background: #292832;
+  color: #ffffff;
+  border-color: #42404b;
+}
+.episode-actions .button-secondary:hover { background: #353340; border-color: #5a5666; }
+.episode-actions .text-button { color: #c5b8ff; padding-inline: 3px; }
+.episode-actions .text-button:hover { color: #e0d9ff; }
+.shelf-empty { background: #131318; border-color: #393741; color: #f4f1f8; }
+.shelf-empty p { color: #aaa5b5; }
+.library-footer { border-color: #2d2c36; }
+.library-footer p { color: #9793a2; }
+
+@media (prefers-reduced-motion: reduce) {
+  .episode-row { transition: none; }
+  .episode-row:hover { transform: none; }
+}
