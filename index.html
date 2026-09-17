@@ -3,14 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="dark">
   <meta name="referrer" content="no-referrer">
   <meta name="description" content="Listen to study podcasts, upload audio to your configured cloud, and organise your saved links by subject.">
   <title>Audio Library - Your podcasts, your pace</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%235e4ce6'/%3E%3Cpath d='M18 35v-5a14 14 0 0 1 28 0v5M18 33v13h7V33zm21 0v13h7V33z' fill='none' stroke='white' stroke-width='4' stroke-linejoin='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./style.css?v=1.0.0">
-  <script src="./config.js?v=1.0.0" defer></script>
-  <script src="./app.js?v=1.0.0" defer></script>
+  <link rel="stylesheet" href="./style.css?v=2.0.0">
+  <script src="./config.js?v=2.0.0" defer></script>
+  <script src="./processing.js?v=2.0.0" defer></script>
+  <script src="./compression.js?v=2.0.0" defer></script>
+  <script src="./app.js?v=2.0.0" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to player</a>
@@ -22,20 +24,23 @@
       </a>
       <div class="header-actions">
         <span class="version-badge" id="connectionBadge"><span class="status-dot" aria-hidden="true"></span><span id="connectionLabel">Local player</span></span>
+        <button class="button button-primary" id="openUploadButton" type="button" aria-controls="uploadPanel" aria-expanded="false">+ Add audio</button>
         <button class="button button-secondary" id="settingsButton" type="button" aria-haspopup="dialog">Settings</button>
       </div>
     </header>
     <main id="main">
       <section class="intro" aria-labelledby="page-title">
-        <p class="eyebrow">LESS SETUP. MORE LISTENING.</p>
-        <h1 id="page-title">Your podcasts.<br><span>Your pace.</span></h1>
-        <p class="intro-copy">A quiet space for your study audio. Listen on your device, share from the cloud, and keep your subjects together.</p>
+        <p class="eyebrow">YOUR STUDY SOUNDTRACK</p>
+        <h1 id="page-title">Listen deeper.<br><span>Learn at your pace.</span></h1>
+        <p class="intro-copy">A focused home for lectures and NotebookLM podcasts—with local optimisation, private-by-default transcripts, and shareable listening links.</p>
+        <button class="hero-play button button-primary" type="button" id="heroUploadButton">Add your first recording <span aria-hidden="true">→</span></button>
       </section>
       <p class="notice notice-info hidden" id="storageNotice" role="status"></p>
       <p class="notice notice-error hidden" id="globalError" role="alert"></p>
       <div class="workspace">
-        <section class="card upload-card" aria-labelledby="upload-title">
-          <div class="card-heading"><span class="step-label">01 / OPEN &amp; UPLOAD</span><span class="small-tag">No account needed</span></div>
+        <div class="drawer-backdrop hidden" id="uploadBackdrop"></div>
+        <section class="card upload-card utility-drawer" id="uploadPanel" aria-labelledby="upload-title" aria-hidden="true">
+          <div class="card-heading"><span class="step-label">ADD TO LIBRARY</span><button class="dialog-close" id="closeUploadButton" type="button" aria-label="Close upload panel">&times;</button></div>
           <h2 id="upload-title">Start with a recording</h2>
           <p class="section-copy">Choose a NotebookLM podcast or another audio file. Preview first. Upload when you are ready.</p>
           <div class="drop-zone" id="dropZone">
@@ -51,6 +56,18 @@
             <input class="text-input" id="podcastTitle" type="text" maxlength="180" placeholder="Give your recording a name" autocomplete="off">
             <div class="field-heading"><label class="field-label" for="podcastSubject">Subject</label><button class="text-button" id="newSubjectUpload" type="button">+ New subject</button></div>
             <select id="podcastSubject" class="full-width" aria-label="Subject for this recording"></select>
+            <section class="optimise-box" aria-labelledby="optimiseTitle">
+              <div class="field-heading"><div><span class="field-label" id="optimiseTitle">Optimise before upload</span><p class="small-copy">Optional. Runs locally and never changes your original.</p></div><span class="small-tag">On device</span></div>
+              <div class="preset-grid" id="compressionPresets" role="radiogroup" aria-label="Audio optimisation preset"></div>
+              <div class="processing-actions"><button class="button button-secondary" id="optimiseButton" type="button" disabled>Optimise audio</button><button class="text-button text-muted hidden" id="cancelOptimise" type="button">Cancel</button></div>
+              <div class="processing-status hidden" id="compressionStatus" aria-live="polite"><div class="status-line"><span id="compressionMessage">Waiting</span><span id="compressionPercent"></span></div><progress id="compressionProgress" value="0" max="100"></progress></div>
+              <div class="processed-result hidden" id="processedResult">
+                <div class="comparison-grid"><div><span>Original</span><strong id="originalSize">—</strong></div><div><span>Optimised</span><strong id="processedSize">—</strong></div><div><span>Measured saving</span><strong id="processedSaving">—</strong></div></div>
+                <p class="small-copy" id="processedFormat"></p><p class="notice notice-info hidden" id="processedAdvice"></p>
+                <audio id="processedPreview" controls preload="metadata" aria-label="Optimised audio preview"></audio>
+                <div class="share-actions"><button class="text-button" id="useProcessed" type="button">Use optimised</button><button class="text-button" id="useOriginal" type="button">Use original</button><button class="text-button" id="downloadProcessed" type="button">Download optimised</button><button class="text-button text-muted" id="retryOptimise" type="button">Retry</button></div>
+              </div>
+            </section>
             <div class="upload-actions"><button class="button button-primary" id="uploadButton" type="button" disabled>Upload to cloud <span aria-hidden="true">&uarr;</span></button><button class="text-button text-muted hidden" id="cancelUpload" type="button">Cancel upload</button></div>
             <div class="progress-container hidden" id="progressContainer"><progress id="uploadProgress" value="0" max="100" aria-label="Upload progress"></progress></div>
             <p class="upload-status" id="uploadStatus" role="status" aria-live="polite">Choose a file to preview it. Nothing is uploaded automatically.</p>
@@ -69,7 +86,7 @@
           <section class="card player-section hidden" id="playerSection" aria-labelledby="audioTitle">
             <div class="card-heading"><span class="step-label">02 / LISTEN</span><span class="player-state" id="playerState" role="status">Loading...</span></div>
             <div class="now-playing-heading"><div class="mini-cover" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M6 13v6m5-12v18m5-15v12m5-17v22m5-14v6"/></svg></div><div class="title-group"><p class="eyebrow track-eyebrow" id="trackSource">ON YOUR DEVICE</p><h2 id="audioTitle">Your recording</h2></div></div>
-            <div class="file-details"><span id="fileType">AUDIO</span><span id="fileSize"></span><span id="audioDuration">Reading duration...</span></div>
+            <div class="file-details"><span id="fileType">AUDIO</span><span id="fileSize"></span><span id="audioDuration">Reading duration...</span><button class="text-button hidden" id="optimiseCloudButton" type="button">Optimise a new copy</button></div>
             <audio id="audioPlayer" controls preload="metadata" aria-label="Audio playback controls">Your browser does not support HTML audio playback.</audio>
             <p class="notice notice-error hidden" id="playbackError" role="alert"></p>
             <div class="extra-controls"><div class="skip-controls" role="group" aria-label="Skip controls"><button class="button button-secondary" type="button" id="backButton" disabled aria-label="Rewind 15 seconds"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M8 3 3 8l5 5M3 8h9a8 8 0 1 1-7 12"/></svg><span>15 sec</span></button><button class="button button-secondary" type="button" id="forwardButton" disabled aria-label="Forward 15 seconds"><span>15 sec</span><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="m16 3 5 5-5 5m5-5h-9a8 8 0 1 0 7 12"/></svg></button></div><div class="speed-control"><label for="speed">Speed</label><select id="speed"><option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1" selected>1x</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="1.75">1.75x</option><option value="2">2x</option></select></div></div>
@@ -78,6 +95,21 @@
             <p class="small-copy hidden" id="sleepStatus" role="status"></p>
             <ul class="bookmark-list" id="bookmarkList" aria-label="Saved bookmarks"></ul>
             <div class="share-section hidden" id="shareSection"><div class="field-heading"><label for="shareLink" class="field-label">Share this player</label><span class="small-tag">Link-only sharing</span></div><div class="copy-row"><input class="text-input" id="shareLink" readonly aria-label="Shareable player link"><button class="button button-primary" id="copyButton" type="button">Copy</button></div><div class="share-actions"><a class="text-button" id="directAudioLink" target="_blank" rel="noopener noreferrer">Open audio directly</a><button class="text-button" id="saveSharedButton" type="button">Save to my library</button></div><p class="small-copy" id="shareHint">Recipients get the player. Your subjects and listening history stay in this browser.</p></div>
+            <section class="transcript-panel" id="transcriptPanel" aria-labelledby="transcriptTitle">
+              <div class="transcript-heading"><div><p class="eyebrow">TRANSCRIPT</p><h3 id="transcriptTitle">Read along</h3></div><span class="transcript-badge" id="transcriptBadge">Not generated</span></div>
+              <p class="small-copy" id="transcriptPrivacy">Optional local AI. First use downloads an English model; audio is processed on this device and is not sent to an AI service.</p>
+              <div class="transcript-actions"><button class="button button-primary" id="generateTranscript" type="button">Generate transcript</button><button class="button button-secondary hidden" id="cancelTranscript" type="button">Cancel</button><button class="button button-secondary" id="importTranscriptButton" type="button">Import</button><button class="text-button" id="clearModelCache" type="button">Clear AI download</button></div>
+              <input class="visually-hidden" id="importTranscriptFile" type="file" accept=".json,.srt,.vtt,.txt,application/json,text/plain,text/vtt,application/x-subrip">
+              <div class="processing-status hidden" id="transcriptProgressWrap"><div class="status-line"><span id="transcriptStatus">Preparing…</span><span id="transcriptPercent"></span></div><progress id="transcriptProgress" max="100" value="0"></progress></div>
+              <p class="notice notice-error hidden" id="transcriptError" role="alert"></p>
+              <div class="transcript-ready hidden" id="transcriptReady">
+                <div class="transcript-toolbar"><input class="text-input" id="transcriptSearch" type="search" placeholder="Search this transcript"><label class="remember-control"><input id="transcriptFollow" type="checkbox" checked><span>Auto-follow</span></label></div>
+                <div class="transcript-segments" id="transcriptSegments" tabindex="0" aria-label="Timestamped transcript"></div>
+                <p class="accuracy-note">Machine-generated transcript—verify technical terms, numbers, and standards against the audio. Speaker identification is not provided.</p>
+                <div class="transcript-actions"><button class="text-button" id="copyTranscript" type="button">Copy text</button><button class="text-button transcript-export" data-format="txt" type="button">TXT</button><button class="text-button transcript-export" data-format="json" type="button">JSON</button><button class="text-button transcript-export" data-format="srt" type="button">SRT</button><button class="text-button transcript-export" data-format="vtt" type="button">VTT</button></div>
+                <div class="publish-box" id="publishBox"><div><strong>Local transcript</strong><p class="small-copy" id="publishHint">Only this browser can see it until you explicitly publish it.</p></div><button class="button button-secondary" id="publishTranscript" type="button">Publish with recording</button></div>
+              </div>
+            </section>
             <div class="player-bottom"><label class="remember-control" for="rememberPosition"><input id="rememberPosition" type="checkbox" checked><span>Remember my position</span></label><button class="text-button text-muted" id="clearButton" type="button">Close player</button></div>
             <p class="save-note" id="saveNote">For local audio, select the same file next time. The original file is not stored by this page.</p>
             <div class="keyboard-note"><span>Keyboard</span><span><kbd>Space</kbd> play / pause</span><span><kbd>&larr;</kbd> <kbd>&rarr;</kbd> skip 15s</span></div>
@@ -85,7 +117,7 @@
         </div>
       </div>
       <section class="library-section" aria-labelledby="libraryTitle">
-        <div class="library-heading"><div><p class="eyebrow">03 / KEEP IT TOGETHER</p><h2 id="libraryTitle">Your listening shelf <span id="libraryCount" class="count-badge">0</span></h2><p class="section-copy">Saved cloud recordings, organised by subject in this browser.</p></div><div class="library-actions"><button class="button button-secondary" type="button" id="addLinkButton">Add audio link</button><button class="button button-secondary" type="button" id="newSubjectButton">+ New subject</button></div></div>
+        <div class="library-heading"><div><p class="eyebrow">YOUR LIBRARY</p><h2 id="libraryTitle">Made for your next study session <span id="libraryCount" class="count-badge">0</span></h2><p class="section-copy">Saved cloud recordings, organised by subject in this browser.</p></div><div class="library-actions"><button class="button button-secondary" type="button" id="addLinkButton">Add audio link</button><button class="button button-secondary" type="button" id="newSubjectButton">+ New subject</button></div></div>
         <nav class="subject-filters" id="subjectFilters" aria-label="Filter recordings by subject"></nav>
         <div class="library-toolbar"><label class="visually-hidden" for="librarySearch">Search recording titles</label><input class="text-input" type="search" id="librarySearch" placeholder="Search your recordings..."><label class="visually-hidden" for="librarySort">Sort recordings</label><select id="librarySort"><option value="newest">Newest first</option><option value="title">Title A-Z</option></select></div>
         <div class="episode-list" id="episodeList"></div>
@@ -93,11 +125,11 @@
         <div class="library-footer"><p>Audio is in R2. This shelf, subjects, bookmarks, and progress are browser-local.<br>Export a backup before clearing your browser data.</p><div><button class="text-button" id="exportLibrary" type="button">Export library</button><button class="text-button" id="importLibraryButton" type="button">Import library</button><button class="text-button text-muted" id="manageSubjects" type="button">Manage subjects</button></div></div>
         <input class="visually-hidden" type="file" id="importLibraryFile" accept="application/json,.json" aria-label="Import library backup">
       </section>
-      <section class="scope-note"><span class="scope-icon" aria-hidden="true">i</span><div><h2>What this release does</h2><p>Local playback, cloud upload, shareable players, and a browser-local subject library. Compression, automatic transcription, and shared cloud collections are not part of this release.</p></div></section>
+      <section class="scope-note"><span class="scope-icon" aria-hidden="true">i</span><div><h2>Local library, shareable listening</h2><p>Audio uploads live in R2. Your shelf, subjects, bookmarks, progress, and unpublished transcripts stay in this browser. Published transcripts and audio links are unlisted, not authenticated private content.</p></div></section>
       <p class="visually-hidden" id="appStatus" role="status" aria-live="polite"></p>
       <noscript><p class="notice notice-error">Please enable JavaScript to use this audio player.</p></noscript>
     </main>
-    <footer><span data-app-name>Audio Library</span><span>Cloud + local edition / 1.0.0</span></footer>
+    <footer><span data-app-name>Audio Library</span><span>Local intelligence edition / 2.0.0</span></footer>
   </div>
   <dialog id="settingsDialog" aria-labelledby="settingsTitle"><div class="dialog-heading"><h2 id="settingsTitle">Connection settings</h2><button class="dialog-close" type="button" data-close="settingsDialog" aria-label="Close settings">&times;</button></div><p class="section-copy">The site default comes from <code>config.js</code>. An override below changes only this browser, not everyone else's site.</p><form id="settingsForm"><label class="field-label" for="apiBaseInput">Cloudflare Worker base URL</label><input class="text-input" type="url" id="apiBaseInput" placeholder="https://your-worker.your-subdomain.workers.dev" autocomplete="off"><p class="small-copy">Use the base address only, without <code>/health</code> or <code>/upload</code>. Leave empty for local-only mode.</p><p class="notice notice-error hidden" id="settingsError" role="alert"></p><div class="dialog-actions"><button class="button button-primary" type="submit">Save for this browser</button><button class="button button-secondary" type="button" id="testConnection">Test connection</button></div><button class="text-button" type="button" id="resetConnection">Use site default instead</button><p id="connectionResult" class="small-copy" role="status"></p></form><div class="dialog-footnote">API addresses are public, not secrets. Never put R2 access keys or Cloudflare API tokens in this frontend.</div></dialog>
   <dialog id="subjectDialog" aria-labelledby="subjectDialogTitle"><div class="dialog-heading"><h2 id="subjectDialogTitle">New subject</h2><button class="dialog-close" type="button" data-close="subjectDialog" aria-label="Close subject editor">&times;</button></div><form id="subjectForm"><label class="field-label" for="subjectName">Subject name</label><input class="text-input" id="subjectName" maxlength="60" required placeholder="e.g. Financial Reporting"><label class="field-label" for="subjectColor">Colour</label><input type="color" id="subjectColor" value="#5e4ce6"><p class="notice notice-error hidden" id="subjectError" role="alert"></p><div class="dialog-actions"><button class="button button-primary" type="submit">Save subject</button><button class="button button-secondary hidden" type="button" id="deleteSubject">Delete subject</button></div><p class="small-copy">Deleting a subject moves its recordings to Unsorted. It does not delete audio.</p></form></dialog>
