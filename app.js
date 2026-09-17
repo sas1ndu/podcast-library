@@ -1,4 +1,4 @@
-/* Audio Library 2.1.0. Public settings: config.js.
+/* Audio Library 2.1.1. Public settings: config.js.
  * Audio and the public catalogue live in R2. Personal playback data is local.
  * The browser never receives Cloudflare credentials.
  */
@@ -229,7 +229,7 @@
     ui.fileType.textContent = extension(track.fileName) ? extension(track.fileName).toUpperCase() : "AUDIO";
     ui.fileSize.textContent = formatSize(track.size);
     ui.audioDuration.textContent = "Reading duration...";
-    ui.saveNote.textContent = track.kind === "cloud" ? "Resume from this browser's saved library. Your playback position is not shared with other listeners." : "For local audio, select the same file next time. The original file is not stored by this page.";
+    ui.saveNote.textContent = track.kind === "cloud" ? "Progress stays in this browser." : "Local file.";
     currentTranscriptRef = normalizeTranscriptRef(track.entry?.transcript || track.transcriptRef);
     show(ui.optimiseCloudButton, track.kind === "cloud" && Boolean(compressionSettings.enabled));
     showError(ui.playbackError, ""); show(ui.resumeNotice, false); show(ui.emptyState, false); show(ui.playerSection);
@@ -587,7 +587,7 @@
     ui.shareLink.value = makeShareLink(entry); ui.directAudioLink.href = entry.audioUrl;
     const included = saved.episodes.some(e => keyOf(e) === current.key);
     show(ui.saveSharedButton, !included);
-    ui.shareHint.textContent = /^https?:$/.test(location.protocol) ? "This audio is discoverable in the public library. Personal subjects, bookmarks, and listening history stay in this browser." : "This page is running from a local file, so this is a direct audio link. Open your GitHub Pages site to share the styled player.";
+    ui.shareHint.textContent = /^https?:$/.test(location.protocol) ? "Public recording." : "Open the hosted site to share this player.";
   }
   async function copyText(value, success = "Link copied.") {
     try {
@@ -1102,7 +1102,7 @@
     if (sleepDeadline && Date.now() >= sleepDeadline) { ui.audioPlayer.pause(); setSleep(0); }
   });
   document.querySelectorAll("[data-app-name]").forEach(element => { element.textContent = appName; });
-  document.title = `${appName} - Your podcasts, your pace`;
+  document.title = appName;
   if (!processing) showError(ui.globalError, "Processing modules did not load. Replace all frontend files together; playback and the existing library may still work.");
   if (!transcriptionSettings.enabled) { ui.transcriptPrivacy.textContent = "Local transcription is disabled in config.js. You can still import a transcript."; ui.generateTranscript.disabled = true; }
   else ui.transcriptPrivacy.textContent = `Optional local AI. First use downloads the pinned English model ${transcriptionSettings.modelId || "Whisper"}; browser cache may be evicted. Audio is not sent to an AI service.`;

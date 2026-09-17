@@ -466,3 +466,155 @@ input[type="color"] { width: 60px; height: 40px; padding: 3px; border: 1px solid
   .episode-row { transition: none; }
   .episode-row:hover { transform: none; }
 }
+
+/* 2.1 minimalist pass: one flat canvas, one accent, short hierarchy. */
+:root {
+  --background: #0e0e11;
+  --surface: #151519;
+  --surface-2: #1b1b20;
+  --surface-3: #232329;
+  --ink: #f5f5f7;
+  --muted: #aaaab3;
+  --accent: #9b87ff;
+  --accent-dark: #8872f2;
+  --accent-soft: #29243e;
+  --border: #303036;
+  --radius: 12px;
+}
+body { background: var(--background); }
+.page-shell { width: min(1160px, calc(100% - 40px)); }
+.site-header {
+  min-height: 68px;
+  background: #0e0e11f2;
+  backdrop-filter: none;
+}
+.brand { font-size: 16px; letter-spacing: -.25px; }
+.brand-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #101014;
+  box-shadow: none;
+}
+.version-badge { background: transparent; border-color: #35353b; color: #c4c4cb; }
+.button { border-radius: 8px; box-shadow: none; transition: background-color .12s ease, border-color .12s ease, color .12s ease; }
+.button-primary { background: var(--accent); color: #111114; }
+.button-primary:hover { background: #ad9dff; }
+.button-secondary { background: transparent; border-color: #3b3b42; color: #eeeeF2; }
+.button-secondary:hover:not(:disabled) { background: #202025; border-color: #505059; color: #ffffff; }
+.intro { max-width: none; padding: 56px 0 42px; }
+.intro::before { display: none; }
+h1 { max-width: none; margin: 0; font-size: clamp(46px, 8vw, 82px); line-height: 1; letter-spacing: -.06em; }
+h1 span { color: var(--accent); }
+.hero-play { margin-top: 26px; min-height: 46px; }
+.card {
+  background: var(--surface);
+  border-color: var(--border);
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+.empty-state {
+  min-height: 220px;
+  padding: 52px 24px;
+  background: var(--surface);
+  border-color: var(--border);
+}
+.empty-state h2 { margin: 0 0 8px; font-size: 24px; }
+.empty-state > p { margin: 0; color: var(--muted); }
+.player-section {
+  padding: clamp(22px, 4vw, 40px);
+  background: var(--surface);
+}
+.mini-cover {
+  flex-basis: 58px;
+  height: 58px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #111114;
+  box-shadow: none;
+}
+.title-group h2 { font-size: clamp(24px, 4vw, 38px); }
+.player-state { background: #24212f; color: #d7ceff; }
+.player-state.is-playing { background: var(--accent); color: #111114; }
+.utility-drawer { background: #121215; box-shadow: -20px 0 60px #0008; }
+.drawer-backdrop { background: #000a; backdrop-filter: none; }
+.drop-zone { background: #17171c; border-color: #45434d; }
+.drop-zone.drag-over { background: #211e2e; border-color: var(--accent); }
+.upload-symbol { background: var(--accent-soft); color: #c5b8ff; }
+.optimise-box, .processed-result { background: #121216; border-color: #303038; }
+.notice-info { background: #211e2d; color: #ded7ff; border-color: #443b63; }
+.notice-error { background: #2a171e; color: #ffc4d3; border-color: #603040; }
+.library-section { margin-top: 46px; padding-top: 30px; }
+.library-heading { align-items: center; }
+.library-heading h2 { margin: 0; font-size: clamp(28px, 4vw, 38px); letter-spacing: -.04em; }
+.count-badge { border-radius: 6px; background: #25222f; color: #d3caff; }
+.subject-filters { margin: 20px 0 14px; }
+.subject-chip { min-height: 36px; border-radius: 8px; background: transparent; color: #c8c8d0; }
+.subject-chip:hover { background: #19191e; }
+.subject-chip[aria-pressed="true"] { background: #222027; color: #ffffff; }
+.library-toolbar { margin-bottom: 10px; }
+.library-toolbar .text-input,
+.library-toolbar select { min-height: 40px; background: #141418; border-color: #34343b; }
+.episode-list { gap: 6px; }
+.episode-row {
+  min-height: 72px;
+  padding: 13px 14px;
+  border-radius: 9px;
+  background: #151519;
+  border-color: #29292f;
+  box-shadow: none;
+  transform: none;
+}
+.episode-row:hover { background: #1a1a1f; border-color: #3a3a42; transform: none; }
+.episode-row.is-current { background: #211e2a; border-color: #5c4d8c; box-shadow: inset 3px 0 0 var(--accent); }
+.episode-icon { background: #202025; border-color: #34343b; border-radius: 8px; }
+.episode-title { color: #f7f7f9; font-size: 14px; }
+.episode-meta { color: #aaaab4; font-size: 11px; }
+.episode-actions .button-secondary { background: #26262c; border-color: #3a3a42; color: #ffffff; }
+.episode-actions .button-secondary:hover { background: #303037; border-color: #505059; }
+.episode-actions .text-button { color: #cabcff; }
+.episode-actions .text-button:hover { color: #eeeaff; }
+.share-section,
+.transcript-panel {
+  background: #111114;
+  color: var(--ink);
+  border-color: #303036;
+  border-radius: 10px;
+  box-shadow: none;
+}
+.share-section .field-label,
+.transcript-panel h3 { color: #f5f5f7; }
+.share-section .small-copy,
+.transcript-panel .small-copy { color: #aaaab3; }
+.share-section .text-input { background: #0d0d10; color: #ffffff; border-color: #38383f; }
+.share-section .text-button,
+.transcript-panel .text-button { color: #cabcff; }
+.transcript-panel { margin-top: 18px; padding: 18px; }
+.transcript-heading { margin-bottom: 8px; }
+.publish-box { background: #18181d; border-color: #33333a; }
+.secondary-controls { border-color: #303036; }
+.player-bottom { border-color: #303036; }
+.keyboard-note, .save-note { display: none; }
+.shelf-empty { background: #121216; border-color: #35353c; }
+.library-footer { justify-content: flex-end; border-color: #2b2b31; }
+.library-footer > div { margin-left: auto; }
+dialog { background: #151519; color: var(--ink); border-color: #393940; box-shadow: 0 24px 80px #0009; }
+dialog::backdrop { background: #000a; backdrop-filter: none; }
+.dialog-close { background: #242429; color: #eeeeF2; }
+.dialog-close:hover { background: #303037; }
+input[type="color"] { background: #101014; border-color: #3a3a42; }
+footer { padding-block: 22px; color: #8f8f99; }
+
+@media (max-width: 640px) {
+  .page-shell { width: min(100% - 24px, 520px); }
+  .site-header { min-height: 62px; }
+  .header-actions .button { min-height: 38px; padding-inline: 11px; }
+  .intro { padding: 42px 0 32px; }
+  h1 { font-size: clamp(44px, 16vw, 66px); }
+  .empty-state { min-height: 180px; padding: 38px 18px; }
+  .player-section { padding: 20px; }
+  .episode-row { padding: 13px; }
+  .episode-actions { padding-left: 56px; }
+  .library-footer > div { margin-left: 0; }
+}
