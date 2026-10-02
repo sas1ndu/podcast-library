@@ -1,4 +1,4 @@
-/* Audio Library Worker 2.2.0
+/* Audio Library Worker 2.3.0
  * Required R2 binding: PODCAST_BUCKET -> podcast-audio
  * Optional text variable: MAX_UPLOAD_BYTES (single-request uploads, default 95 MiB)
  * This is deliberately an OPEN upload API: no login, CAPTCHA or rate limiter.
@@ -9,6 +9,8 @@ const DEFAULT_MAX_BYTES = 95 * 1024 * 1024;
 const MULTIPART_PART_BYTES = 64 * 1024 * 1024;
 const MAX_MULTIPART_PARTS = 10000;
 const MAX_MULTIPART_UPLOAD_BYTES = MULTIPART_PART_BYTES * MAX_MULTIPART_PARTS;
+const MAX_SHARED_SUBJECT_SHARD_BYTES = 4 * 1024 * 1024;
+const MAX_SHARED_SUBJECTS_PER_SHARD = 10000;
 const DEFAULT_MAX_TRANSCRIPT_BYTES = 8 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CORS = {
@@ -53,6 +55,48 @@ async function readJsonBody(request, maxBytes) {
 }
 function cleanJsonText(value, max) {
   return typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, max) : "";
+}
+function normalizeSharedSubject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.subjectId !== "string" || value.subjectId.length > 80) return null;
+  const subjectId = cleanJsonText(value.subjectId, 80);
+  if (!subjectId) return { subjectId: "", subjectName: "", subjectColor: "" };
+  if (!/^[a-zA-Z0-9_-]{1,80}$/.test(subjectId) || ["all", "unsorted", "__proto__", "constructor"].includes(subjectId)) return null;
+  const subjectName = cleanJsonText(value.subjectName, 60), subjectColor = typeof value.subjectColor === "string" ? value.subjectColor : "";
+  if (!subjectName || !/^#[0-9a-f]{6}$/i.test(subjectColor)) return null;
+  return { subjectId, subjectName, subjectColor };
+}
+function sharedSubjectShardKey(shard) { return `metadata/subject-assignments/${shard}.json`; }
+async function readSharedSubjectShard(bucket, shard) {
+  const object = await bucket.get(sharedSubjectShardKey(shard));
+  if (!object) return { assignments: Object.create(null), etag: null };
+  if (object.size > MAX_SHARED_SUBJECT_SHARD_BYTES) throw new Error("The shared subject assignment data is too large.");
+  let data;
+  try { data = await object.json(); } catch (_) { throw new Error("The shared subject assignment data is malformed."); }
+  if (!data || data.schemaVersion !== 1 || !data.assignments || typeof data.assignments !== "object" || Array.isArray(data.assignments)) throw new Error("The shared subject assignment data is invalid.");
+  const entries = Object.entries(data.assignments);
+  if (entries.length > MAX_SHARED_SUBJECTS_PER_SHARD) throw new Error("The shared subject assignment data has too many entries.");
+  const assignments = Object.create(null);
+  for (const [id, value] of entries) {
+    const audioId = id.toLowerCase();
+    if (!UUID.test(audioId) || audioId[0] !== shard) continue;
+    const subject = normalizeSharedSubject(value);
+    if (subject) assignments[audioId] = subject;
+  }
+  return { assignments, etag: object.etag };
+}
+async function writeSharedSubjectAssignment(bucket, audioId, subject) {
+  const shard = audioId[0], key = sharedSubjectShardKey(shard);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const current = await readSharedSubjectShard(bucket, shard);
+    if (!Object.hasOwn(current.assignments, audioId) && Object.keys(current.assignments).length >= MAX_SHARED_SUBJECTS_PER_SHARD) return null;
+    current.assignments[audioId] = subject;
+    const body = JSON.stringify({ schemaVersion: 1, assignments: current.assignments });
+    if (new TextEncoder().encode(body).byteLength > MAX_SHARED_SUBJECT_SHARD_BYTES) return null;
+    const onlyIf = current.etag ? { etagMatches: current.etag } : { etagDoesNotMatch: "*" };
+    const result = await bucket.put(key, body, { onlyIf, httpMetadata: { contentType: "application/json; charset=utf-8" } });
+    if (result) return true;
+  }
+  return false;
 }
 function formatBytes(bytes) {
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
@@ -119,7 +163,7 @@ export default {
       if (url.pathname === "/health") {
         if (request.method !== "GET") return methodNotAllowed("GET");
         const result = await env.PODCAST_BUCKET.list({ limit: 1 });
-        return json({ ok: true, r2Connected: true, objectsFound: result.objects.length, version: "2.2.0", maxUploadBytes: MAX_MULTIPART_UPLOAD_BYTES, singleRequestMaxUploadBytes: maxUploadBytes(env), uploadPartBytes: MULTIPART_PART_BYTES, maxTranscriptBytes: maxTranscriptBytes(env) });
+        return json({ ok: true, r2Connected: true, objectsFound: result.objects.length, version: "2.3.0", maxUploadBytes: MAX_MULTIPART_UPLOAD_BYTES, singleRequestMaxUploadBytes: maxUploadBytes(env), uploadPartBytes: MULTIPART_PART_BYTES, maxTranscriptBytes: maxTranscriptBytes(env) });
       }
       if (url.pathname === "/library") {
         if (request.method !== "GET") return methodNotAllowed("GET");
@@ -128,10 +172,14 @@ export default {
         const cursor = url.searchParams.get("cursor") || undefined;
         if (cursor && cursor.length > 2048) return json({ ok: false, error: "The library cursor is invalid." }, 400);
         const listed = await env.PODCAST_BUCKET.list({ prefix: "audio/", limit, cursor, include: ["customMetadata", "httpMetadata"] });
+        const shards = Array.from(new Set(listed.objects.map(object => object.key.slice(6).toLowerCase()).filter(id => UUID.test(id)).map(id => id[0])));
+        const assignmentsByShard = new Map();
+        for (const shard of shards) assignmentsByShard.set(shard, (await readSharedSubjectShard(env.PODCAST_BUCKET, shard)).assignments);
         const recordings = listed.objects.map(object => {
           const id = object.key.slice(6).toLowerCase(), metadata = object.customMetadata || {};
           if (!UUID.test(id)) return null;
           const duration = Number(metadata.duration);
+          const assignment = assignmentsByShard.get(id[0])?.[id];
           return {
             id,
             title: String(metadata.title || metadata.originalFileName || "Shared recording").slice(0, 180),
@@ -139,14 +187,14 @@ export default {
             size: object.size,
             type: object.httpMetadata?.contentType || "",
             duration: Number.isFinite(duration) && duration > 0 ? duration : null,
-            subjectId: /^[a-zA-Z0-9_-]{1,80}$/.test(metadata.subjectId || "") ? metadata.subjectId : "",
-            subjectName: String(metadata.subjectName || "").slice(0, 60),
-            subjectColor: /^#[0-9a-f]{6}$/i.test(metadata.subjectColor || "") ? metadata.subjectColor : "",
+            subjectId: assignment ? assignment.subjectId : /^[a-zA-Z0-9_-]{1,80}$/.test(metadata.subjectId || "") ? metadata.subjectId : "",
+            subjectName: assignment ? assignment.subjectName : String(metadata.subjectName || "").slice(0, 60),
+            subjectColor: assignment ? assignment.subjectColor : /^#[0-9a-f]{6}$/i.test(metadata.subjectColor || "") ? metadata.subjectColor : "",
             createdAt: object.uploaded instanceof Date ? object.uploaded.getTime() : Date.parse(object.uploaded) || 0,
             audioUrl: `${url.origin}/audio/${id}`
           };
         }).filter(Boolean);
-        return json({ ok: true, recordings, truncated: Boolean(listed.truncated), cursor: listed.truncated ? listed.cursor : undefined }, 200, { "Cache-Control": "public, max-age=15, stale-while-revalidate=30" });
+        return json({ ok: true, recordings, truncated: Boolean(listed.truncated), cursor: listed.truncated ? listed.cursor : undefined }, 200, { "Cache-Control": "no-store" });
       }
       if (url.pathname === "/upload/multipart") {
         if (request.method !== "POST" || url.searchParams.get("action") !== "create") return methodNotAllowed("POST");
@@ -291,6 +339,23 @@ export default {
         if (!object || !("body" in object)) return json({ ok: false, error: "Transcript not found." }, 404);
         const headers = new Headers(CORS); headers.set("Content-Type", "application/json; charset=utf-8"); headers.set("Content-Length", String(object.size)); headers.set("ETag", object.httpEtag); headers.set("Cache-Control", "public, max-age=31536000, immutable, no-transform");
         return new Response(object.body, { status: 200, headers });
+      }
+      const subjectRoute = /^\/audio\/([^/]+)\/subject$/.exec(url.pathname);
+      if (subjectRoute) {
+        if (request.method !== "PUT") return methodNotAllowed("PUT");
+        const id = subjectRoute[1].toLowerCase();
+        if (!UUID.test(id)) return json({ ok: false, error: "Invalid audio ID." }, 400);
+        if ((request.headers.get("content-type") || "").split(";")[0].trim().toLowerCase() !== "application/json") return json({ ok: false, error: "An application/json Content-Type is required." }, 415);
+        let input;
+        try { input = await readJsonBody(request, 16 * 1024); }
+        catch (error) { return json({ ok: false, error: error.message }, 400); }
+        const subject = normalizeSharedSubject(input);
+        if (!subject) return json({ ok: false, error: "The shared subject assignment is invalid." }, 400);
+        if (!await env.PODCAST_BUCKET.head(`audio/${id}`)) return json({ ok: false, error: "Audio not found." }, 404);
+        const stored = await writeSharedSubjectAssignment(env.PODCAST_BUCKET, id, subject);
+        if (stored === null) return json({ ok: false, error: "The shared subject assignment limit was reached." }, 413);
+        if (!stored) return json({ ok: false, error: "Another subject update happened at the same time. Retry the assignment." }, 409);
+        return json({ ok: true, id, ...subject });
       }
       const route = /^\/audio\/([^/]+)(\/info)?$/.exec(url.pathname);
       if (route) {

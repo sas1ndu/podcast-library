@@ -55,6 +55,6 @@ window.PODCAST_CONFIG = Object.freeze({
     { id: "tax", name: "Tax", color: "#bd4e6d" },
     { id: "risk", name: "Risk", color: "#ad741c" },
     { id: "it", name: "IT", color: "#278166" },
-    { id: "audiobooks_apit", name: "Audiobooks | APIT", color: "#c17432" }
+    { id: "audiobooks_apit", name: "Audiobooks | APIIT", color: "#c17432" }
   ]
 });

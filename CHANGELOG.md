@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Added the default **Audiobooks | APIT** subject and one-time migration so existing browser libraries receive it without losing their current subjects.
-
+- Renamed the default subject to **Audiobooks | APIIT** and added a one-time migration for existing browser libraries.
+- Saved public recording subject assignments in R2 so category changes are shared across visitors and devices.
 - Added R2 multipart uploads for recordings above 95 MiB, allowing large audiobooks to upload in 64 MiB parts up to the app's 625 GiB part-count limit.
 
 ## 2.1.1 - 2026-09-17

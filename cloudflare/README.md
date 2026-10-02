@@ -1,4 +1,4 @@
-# Cloudflare Worker 2.2
+# Cloudflare Worker 2.3
 
 Deploy `worker.js` to the existing `podcast-api` Worker and retain the binding:
 
@@ -17,15 +17,18 @@ No database, public bucket, token, AI binding, or paid provider is needed.
 
 - `GET /health`
 - `GET /library` — paginated public catalogue of `audio/` objects and safe display metadata
-- `POST /upload` — unchanged raw audio body; not multipart
+- `PUT /audio/:id/subject` — save a public recording's shared subject assignment
 - `POST /upload/multipart?action=create` — start an R2 multipart upload
 - `PUT /upload/multipart/:id?action=part` — stream one part
 - `POST /upload/multipart/:id?action=complete` — finish the recording
 - `DELETE /upload/multipart/:id?action=abort` — discard an incomplete upload
+- `POST /upload` — unchanged raw audio body; not multipart
 - `GET|HEAD /audio/:id`
 - `GET /audio/:id/info`
 - `POST /transcripts` — `{ audioId, transcript }` JSON; server creates a fresh ID
 - `GET /transcripts/:id`
+
+Shared subject assignments are stored as small, sharded JSON objects under `metadata/subject-assignments/`; audio bodies are not rewritten. R2 ETag preconditions prevent edits to different recordings from clobbering one another; simultaneous changes to the same recording resolve to the last successful edit. Any visitor can change a public recording's shared assignment, including moving it to or from Unsorted.
 
 Audio behavior preserves full/ranged/conditional responses: 200, 206, 304, 416, HEAD metadata, ETag, and byte ranges. Existing `audio/<UUID>` keys and old player links continue working.
 
@@ -33,12 +36,12 @@ Published transcript objects use `transcripts/<UUID>.json`. The server verifies 
 
 ## Deploy
 
-Dashboard: edit the existing Worker, replace its code with `worker.js`, keep the R2 binding, add the optional variables if desired, and deploy. Check `/health` reports version `2.2.0` and `r2Connected: true`, then check `/library` returns a JSON catalogue.
+Dashboard: edit the existing Worker, replace its code with `worker.js`, keep the R2 binding, add the optional variables if desired, and deploy. Check `/health` reports version `2.3.0` and `r2Connected: true`, then check `/library` returns a JSON catalogue.
 
 Wrangler users can review `wrangler.jsonc` and run their normal deployment command. This source package does not deploy automatically.
 
 ## Open-upload risk
 
-The API and recording catalogue intentionally remain anonymous as requested. MIME/length/schema validation limits individual requests but does not provide ownership, confidentiality, Turnstile, rate limiting, total quotas, or malware scanning. Anyone may upload; every visitor can list and play uploaded audio. Monitor R2/Worker use and disable or protect the routes if that risk is unacceptable.
+The API and recording catalogue intentionally remain anonymous. MIME/length/schema validation limits individual requests but does not provide ownership, confidentiality, Turnstile, rate limiting, total quotas, or malware scanning. Anyone may upload, list and play recordings, and change shared subject assignments. Monitor R2/Worker use and protect the write routes if that access should be restricted.
 
 Do not add Cloudflare tokens or R2 credentials to frontend `config.js`; R2 access stays in this server-side binding.

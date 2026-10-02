@@ -1,4 +1,4 @@
-/* Audio Library 2.2.1. Public settings: config.js.
+/* Audio Library 2.3.0. Public settings: config.js.
  * Audio and the public catalogue live in R2. Personal playback data is local.
  * The browser never receives Cloudflare credentials.
  */
@@ -15,7 +15,7 @@
   }
   const STORAGE_KEY = "audio-library:cloud:v1";
   const CONNECTION_KEY = "audio-library:connection:v1";
-  const DEFAULT_SUBJECTS_VERSION = 1;
+  const DEFAULT_SUBJECTS_VERSION = 2;
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
   const MIME_BY_EXT = { mp3: "audio/mpeg", m4a: "audio/mp4", mp4: "audio/mp4", aac: "audio/aac", wav: "audio/wav", wave: "audio/wav", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg", webm: "audio/webm", flac: "audio/flac" };
@@ -169,11 +169,13 @@
     const state = defaults();
     if (Array.isArray(data.subjects)) state.subjects = Array.from(new Map(data.subjects.filter(validSubject).slice(0, 500).map(s => [s.id, { id: s.id, name: s.name.trim().slice(0, 60), color: s.color }])).values());
     if (!Number.isSafeInteger(data.defaultSubjectsVersion) || data.defaultSubjectsVersion < DEFAULT_SUBJECTS_VERSION) {
-      const subjectIds = new Set(state.subjects.map(subject => subject.id));
       for (const subject of defaults().subjects) {
-        if (subjectIds.has(subject.id)) continue;
-        state.subjects.push(subject);
-        subjectIds.add(subject.id);
+        const existing = state.subjects.find(item => item.id === subject.id);
+        if (!existing) {
+          state.subjects.push(subject);
+        } else if (subject.id === "audiobooks_apit" && existing.name === "Audiobooks | APIT") {
+          existing.name = subject.name;
+        }
       }
     }
     state.defaultSubjectsVersion = DEFAULT_SUBJECTS_VERSION;
@@ -511,16 +513,24 @@
   ui.uploadButton.addEventListener("click", upload);
   ui.cancelUpload.addEventListener("click", () => { if (!uploadActive) return; uploadCancelled = true; if (uploadXHR) uploadXHR.abort(); else uploadFailure("Cancelling upload..."); });
 
-  function fillSubjects(select, selected) {
+  function fillSubjects(select, selected, subjects = availableSubjects()) {
     const value = selected !== undefined ? selected : select.value;
-    select.replaceChildren(new Option("Unsorted", ""), ...saved.subjects.map(s => new Option(s.name, s.id)));
-    select.value = saved.subjects.some(s => s.id === value) ? value : "";
+    select.replaceChildren(new Option("Unsorted", ""), ...subjects.map(s => new Option(s.name, s.id)));
+    select.value = subjects.some(s => s.id === value) ? value : "";
+  }
+  function availableSubjects() {
+    const subjects = new Map(saved.subjects.map(subject => [subject.id, subject]));
+    for (const entry of publicEpisodes) {
+      if (!entry.subjectId || subjects.has(entry.subjectId)) continue;
+      subjects.set(entry.subjectId, { id: entry.subjectId, name: entry.publicSubjectName || "Shared subject", color: entry.publicSubjectColor || "#85899a" });
+    }
+    return Array.from(subjects.values());
   }
   function libraryEntries() {
     const entries = new Map(publicEpisodes.map(entry => [keyOf(entry), entry]));
     for (const local of saved.episodes) {
       const remote = entries.get(keyOf(local));
-      entries.set(keyOf(local), remote ? { ...remote, ...local, isPublic: true, publicSubjectName: remote.publicSubjectName, publicSubjectColor: remote.publicSubjectColor } : local);
+      entries.set(keyOf(local), remote ? { ...remote, ...local, isPublic: true, subjectId: remote.subjectId, publicSubjectName: remote.publicSubjectName, publicSubjectColor: remote.publicSubjectColor } : local);
     }
     return Array.from(entries.values());
   }
@@ -528,6 +538,24 @@
     const local = subjectById(entry.subjectId);
     if (entry.subjectId && local.id) return local;
     return { id: "", name: entry.publicSubjectName || "Unsorted", color: entry.publicSubjectColor || "#85899a" };
+  }
+  async function savePublicSubject(entry, subjectId, select) {
+    const oldSubjectId = entry.subjectId;
+    const selectedSubject = subjectId ? availableSubjects().find(subject => subject.id === subjectId) : null;
+    if (subjectId && !selectedSubject) { select.value = oldSubjectId; select.disabled = false; notify("That subject is no longer available. Refresh the library and try again."); return; }
+    const assignment = { subjectId, subjectName: selectedSubject ? selectedSubject.name : "", subjectColor: selectedSubject ? selectedSubject.color : "" };
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(`${entry.apiBaseUrl}/audio/${entry.id}/subject`, { method: "PUT", credentials: "omit", cache: "no-store", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify(assignment) });
+      let result = null; try { result = await response.json(); } catch (_) { /* Report status below. */ }
+      if (response.status === 404 || response.status === 405) throw new Error("Shared subject saving needs Worker 2.3. Deploy the updated cloudflare/worker.js first.");
+      if (!response.ok || !result || result.ok !== true) throw new Error(result && result.error ? result.error : `HTTP ${response.status}`);
+      publicEpisodes = publicEpisodes.map(item => keyOf(item) === keyOf(entry) ? { ...item, subjectId: assignment.subjectId, publicSubjectName: assignment.subjectName, publicSubjectColor: assignment.subjectColor } : item);
+      renderSubjects(); renderLibrary(); notify("Shared subject saved for everyone.");
+    } catch (error) {
+      select.value = oldSubjectId; select.disabled = false;
+      notify(`Could not save shared subject: ${error.message}`);
+    } finally { clearTimeout(timer); }
   }
   async function loadPublicLibrary() {
     if (!publicLibrarySettings.enabled || !apiBase || publicLibraryLoading) return;
@@ -579,6 +607,7 @@
   function renderLibrary() {
     const query = ui.librarySearch.value.trim().toLocaleLowerCase();
     const entries = libraryEntries();
+    const subjects = availableSubjects();
     const filtered = entries.filter(e => (subjectFilter === "all" || (subjectFilter === "unsorted" ? !e.subjectId : e.subjectId === subjectFilter)) && `${e.title} ${e.fileName} ${displaySubject(e).name}`.toLocaleLowerCase().includes(query));
     filtered.sort(ui.librarySort.value === "title" ? (a, b) => a.title.localeCompare(b.title) : (a, b) => b.createdAt - a.createdAt);
     const fragment = document.createDocumentFragment();
@@ -593,15 +622,23 @@
       const actions = text("div", "", "episode-actions");
       const play = button("Listen", "button button-secondary", () => { clearListenHash(); openCloud(entry); ui.playerSection.scrollIntoView({ behavior: "smooth", block: "start" }); });
       const share = button("Share", "text-button", () => copyText(makeShareLink(entry), "Player link copied."));
+      if (entry.isPublic) {
+        const choose = text("select", "", "episode-subject"); fillSubjects(choose, entry.subjectId, subjects); choose.setAttribute("aria-label", `Shared subject for ${entry.title}`); choose.title = "Shared subject: changes apply to everyone.";
+        choose.addEventListener("change", () => { choose.disabled = true; savePublicSubject(entry, choose.value, choose); });
+        actions.append(choose);
+      }
       if (locallySaved) {
         const localEntry = saved.episodes.find(item => keyOf(item) === key);
-        const choose = text("select", "", "episode-subject"); fillSubjects(choose, localEntry.subjectId); choose.setAttribute("aria-label", `Personal subject for ${entry.title}`);
-        choose.addEventListener("change", () => { localEntry.subjectId = choose.value; persist(); renderSubjects(); renderLibrary(); });
+        if (!entry.isPublic) {
+          const choose = text("select", "", "episode-subject"); fillSubjects(choose, localEntry.subjectId, subjects); choose.setAttribute("aria-label", `Personal subject for ${entry.title}`);
+          choose.addEventListener("change", () => { localEntry.subjectId = choose.value; persist(); renderSubjects(); renderLibrary(); });
+          actions.append(choose);
+        }
         const remove = button("Forget", "text-button text-muted", () => {
           if (!window.confirm(`Remove "${entry.title}" from this browser's saved items? Public uploads remain visible to everyone.`)) return;
           saved.episodes = saved.episodes.filter(e => keyOf(e) !== key); persist(); renderSubjects(); renderLibrary(); renderShare();
         });
-        actions.append(choose, play, share, remove);
+        actions.append(play, share, remove);
       } else {
         const save = button("Save", "text-button", () => { saved.episodes.unshift({ ...entry, isPublic: false }); persist(); renderSubjects(); renderLibrary(); notify("Saved to this browser for personal subjects and transcript references."); });
         actions.append(play, share, save);
