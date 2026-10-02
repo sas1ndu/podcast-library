@@ -5,7 +5,8 @@
 window.PODCAST_CONFIG = Object.freeze({
   appName: "Audio Library",
   apiBaseUrl: "https://podcast-api.pradeepsasindu2001.workers.dev",
-  maxUploadBytes: 80 * 1024 * 1024,
+  maxUploadBytes: 64 * 1024 * 1024 * 10000,
+  singleRequestMaxUploadBytes: 95 * 1024 * 1024,
   uploadTimeoutMs: 20 * 60 * 1000,
   publicLibrary: { enabled: true, pageSize: 100, maxItems: 5000 },
   compression: {

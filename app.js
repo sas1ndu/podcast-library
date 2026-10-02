@@ -1,4 +1,4 @@
-/* Audio Library 2.1.1. Public settings: config.js.
+/* Audio Library 2.2.0. Public settings: config.js.
  * Audio and the public catalogue live in R2. Personal playback data is local.
  * The browser never receives Cloudflare credentials.
  */
@@ -24,7 +24,9 @@
   const publishingSettings = config.transcriptPublishing && typeof config.transcriptPublishing === "object" ? config.transcriptPublishing : { enabled: false };
   const publicLibrarySettings = config.publicLibrary && typeof config.publicLibrary === "object" ? config.publicLibrary : { enabled: true, pageSize: 100, maxItems: 5000 };
   const appName = String(config.appName || "Audio Library").slice(0, 80);
-  const maxBytes = Number.isSafeInteger(config.maxUploadBytes) && config.maxUploadBytes > 0 ? config.maxUploadBytes : 80 * 1024 * 1024;
+  const maxBytes = Number.isSafeInteger(config.maxUploadBytes) && config.maxUploadBytes > 0 ? config.maxUploadBytes : 64 * 1024 * 1024 * 10000;
+  const singleRequestMaxBytes = Number.isSafeInteger(config.singleRequestMaxUploadBytes) && config.singleRequestMaxUploadBytes > 0 ? config.singleRequestMaxUploadBytes : 95 * 1024 * 1024;
+  const multipartPartBytes = 64 * 1024 * 1024;
   const timeoutMs = Number.isSafeInteger(config.uploadTimeoutMs) && config.uploadTimeoutMs > 0 ? config.uploadTimeoutMs : 1200000;
   let storageAvailable = true;
   let current = null;
@@ -48,6 +50,8 @@
   let originalDuration = null;
   let transcriptManualUntil = 0;
   let uploadXHR = null;
+  let uploadActive = false;
+  let uploadCancelled = false;
   let uploadedDraft = null;
   let objectURL = null;
   let metadataReady = false;
@@ -130,7 +134,10 @@
   function formatSize(bytes) {
     if (!Number.isFinite(bytes) || bytes < 0) return "Size unavailable";
     if (bytes < 1024) return `${bytes} B`;
-    return bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / 1048576).toFixed(1)} MiB`;
+    const units = ["KiB", "MiB", "GiB"];
+    let value = bytes, unit = -1;
+    do { value /= 1024; unit++; } while (value >= 1024 && unit < units.length - 1);
+    return `${value.toFixed(1)} ${units[unit]}`;
   }
   function cleanTitle(value, fallback = "Untitled recording") { return String(value || "").trim().slice(0, 180) || fallback; }
   function disableStorage() {
@@ -242,7 +249,7 @@
   }
   function openCloud(entry, options) { openTrack({ kind: "cloud", key: keyOf(entry), title: entry.title, fileName: entry.fileName, size: entry.size, entry }, options); }
   function chooseFile(file) {
-    if (uploadXHR) { notify("Finish or cancel the current upload before choosing another file."); return; }
+    if (uploadActive) { notify("Finish or cancel the current upload before choosing another file."); return; }
     if (!(file instanceof File)) return;
     showError(ui.fileError, "");
     if (!file.size) { showError(ui.fileError, "This file is empty. Choose an audio recording with content."); return; }
@@ -254,7 +261,7 @@
     ui.fileLabel.textContent = "Choose another file";
     ui.podcastTitle.value = cleanTitle(file.name.replace(/\.[^.]+$/, "").replace(/_/g, " "));
     ui.uploadStatus.classList.remove("is-success");
-    ui.uploadStatus.textContent = file.size > maxBytes ? `Local preview is ready. The original exceeds ${formatSize(maxBytes)}, but you can optimise it and upload the result if that is smaller than the limit.` : "Local preview is ready. Optimise optionally, then upload the selected version.";
+    ui.uploadStatus.textContent = file.size > maxBytes ? `Local preview is ready. This file exceeds the ${formatSize(maxBytes)} upload maximum.` : file.size > singleRequestMaxBytes ? "Local preview is ready. This large file will upload in parts." : "Local preview is ready. Optimise optionally, then upload the selected version.";
     show(ui.progressContainer, false); ui.uploadProgress.value = 0;
     updateUploadButton();
     openTrack({ kind: "local", key: JSON.stringify([file.name, file.size, file.lastModified]), title: ui.podcastTitle.value, fileName: file.name, size: file.size, file, sourceFile: file });
@@ -339,8 +346,8 @@
     if (current && current.kind === "local" && current.file === draftFile) { current.title = cleanTitle(ui.podcastTitle.value, draftFile.name); ui.audioTitle.textContent = current.title; updateMediaSession(); }
   });
   ui.audioFile.addEventListener("change", () => { const file = ui.audioFile.files[0]; if (file) chooseFile(file); ui.audioFile.value = ""; });
-  ui.dropZone.addEventListener("dragenter", event => { event.preventDefault(); dragDepth++; if (!uploadXHR) ui.dropZone.classList.add("drag-over"); });
-  ui.dropZone.addEventListener("dragover", event => { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = uploadXHR ? "none" : "copy"; });
+  ui.dropZone.addEventListener("dragenter", event => { event.preventDefault(); dragDepth++; if (!uploadActive) ui.dropZone.classList.add("drag-over"); });
+  ui.dropZone.addEventListener("dragover", event => { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = uploadActive ? "none" : "copy"; });
   ui.dropZone.addEventListener("dragleave", event => { event.preventDefault(); dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) ui.dropZone.classList.remove("drag-over"); });
   ui.dropZone.addEventListener("drop", event => {
     event.preventDefault(); dragDepth = 0; ui.dropZone.classList.remove("drag-over");
@@ -352,46 +359,105 @@
   for (const name of ["dragover", "drop"]) window.addEventListener(name, event => { if (event.dataTransfer && Array.from(event.dataTransfer.types).includes("Files")) event.preventDefault(); });
 
   function updateUploadButton() {
-    ui.uploadButton.disabled = Boolean(uploadXHR) || !uploadCandidate || uploadCandidate.size > maxBytes || !apiBase || Boolean(uploadedDraft) || heavyJobActive;
+    ui.uploadButton.disabled = uploadActive || !uploadCandidate || uploadCandidate.size > maxBytes || !apiBase || Boolean(uploadedDraft) || heavyJobActive;
     ui.uploadButton.textContent = uploadedDraft ? "Uploaded publicly" : "Upload publicly";
   }
   function setUploading(active) {
+    uploadActive = active;
     for (const input of [ui.audioFile, ui.podcastTitle, ui.podcastSubject, ui.settingsButton, ui.newSubjectUpload]) input.disabled = active;
     ui.dropZone.classList.toggle("is-disabled", active); show(ui.cancelUpload, active); updateUploadButton();
   }
   function uploadFailure(message) { ui.uploadStatus.classList.remove("is-success"); ui.uploadStatus.textContent = message; }
+  function uploadRequest(method, url, headers, body, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest(); uploadXHR = xhr;
+      xhr.open(method, url); xhr.timeout = timeoutMs;
+      for (const [name, value] of Object.entries(headers || {})) xhr.setRequestHeader(name, value);
+      if (onProgress) xhr.upload.addEventListener("progress", onProgress);
+      xhr.onload = () => {
+        let result = null;
+        try { result = JSON.parse(xhr.responseText); } catch (_) { /* The error below includes the HTTP status. */ }
+        if (xhr.status < 200 || xhr.status >= 300) {
+          const message = xhr.status === 404 && url.includes("/upload/multipart") ? "The deployed Worker does not support large-file uploads yet. Deploy the updated cloudflare/worker.js and retry." : result && result.error ? `${result.error} (HTTP ${xhr.status})` : `Upload request failed (HTTP ${xhr.status}).`;
+          const error = new Error(message);
+          error.status = xhr.status; reject(error); return;
+        }
+        resolve(result);
+      };
+      xhr.onerror = () => reject(new Error("Network or CORS error. Check the Worker address and deployment."));
+      xhr.ontimeout = () => reject(new Error("An upload request timed out. Try again on a more stable connection."));
+      xhr.onabort = () => reject(new DOMException("Upload cancelled.", "AbortError"));
+      xhr.onloadend = () => { if (uploadXHR === xhr) uploadXHR = null; };
+      try { xhr.send(body === undefined ? null : body); }
+      catch (error) { if (uploadXHR === xhr) uploadXHR = null; reject(error); }
+    });
+  }
   function upload() {
-    if (uploadXHR || !uploadCandidate || uploadedDraft) return;
+    if (uploadActive || !uploadCandidate || uploadedDraft) return;
     if (!apiBase) { openSettings(); return; }
     if (uploadCandidate.size > maxBytes) { showError(ui.fileError, `The selected upload version is ${formatSize(uploadCandidate.size)}. Cloud uploads are limited to ${formatSize(maxBytes)}.`); return; }
     const file = uploadCandidate, base = apiBase, title = cleanTitle(ui.podcastTitle.value, file.name), subjectId = ui.podcastSubject.value;
     const publicSubject = saved.subjects.find(subject => subject.id === subjectId);
     const mime = MIME_BY_EXT[extension(file.name)] || (file.type.startsWith("audio/") ? file.type : "");
     if (!mime) { showError(ui.fileError, "This audio format could not be identified. Try MP3 or M4A."); return; }
-    const xhr = new XMLHttpRequest(); uploadXHR = xhr; setUploading(true);
-    showError(ui.fileError, ""); show(ui.progressContainer); ui.uploadProgress.value = 0;
-    ui.uploadStatus.classList.remove("is-success"); ui.uploadStatus.textContent = "Starting upload...";
-    xhr.open("POST", `${base}/upload`); xhr.timeout = timeoutMs;
-    xhr.setRequestHeader("Content-Type", mime);
-    xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name.slice(0, 200)));
-    xhr.setRequestHeader("X-Title", encodeURIComponent(title));
-    if (subjectId) xhr.setRequestHeader("X-Subject-Id", subjectId);
-    if (publicSubject) { xhr.setRequestHeader("X-Subject-Name", encodeURIComponent(publicSubject.name)); xhr.setRequestHeader("X-Subject-Color", publicSubject.color); }
     const publicDuration = Number.isFinite(originalDuration) ? originalDuration : Number(ui.audioPlayer.duration);
-    if (Number.isFinite(publicDuration) && publicDuration > 0) xhr.setRequestHeader("X-Duration", String(publicDuration));
-    xhr.upload.addEventListener("progress", event => {
-      if (!event.lengthComputable) return;
-      const percent = Math.round(event.loaded / event.total * 100);
-      ui.uploadProgress.value = percent;
-      ui.uploadStatus.textContent = percent < 100 ? `Uploading ${percent}%...` : "Audio sent. Waiting for cloud storage confirmation...";
-    });
-    xhr.onload = async () => {
-      let result;
-      try { result = JSON.parse(xhr.responseText); } catch (_) { result = null; }
-      if (xhr.status < 200 || xhr.status >= 300) {
-        uploadFailure(result && result.error ? `${result.error} (HTTP ${xhr.status})` : `Upload failed (HTTP ${xhr.status}). ${xhr.status === 413 ? "The server rejected the file size." : "Check your Worker deployment and try again."}`);
-        return;
-      }
+    const metadata = { size: file.size, contentType: mime, fileName: file.name.slice(0, 200), title, subjectId, subjectName: publicSubject ? publicSubject.name : "", subjectColor: publicSubject ? publicSubject.color : "", duration: Number.isFinite(publicDuration) && publicDuration > 0 ? publicDuration : null };
+    let multipart = null;
+    setUploading(true); uploadCancelled = false;
+    showError(ui.fileError, ""); show(ui.progressContainer); ui.uploadProgress.value = 0;
+    ui.uploadStatus.classList.remove("is-success"); ui.uploadStatus.textContent = file.size > singleRequestMaxBytes ? "Preparing large-file upload..." : "Starting upload...";
+    (async () => {
+      try {
+        let result;
+        if (file.size <= singleRequestMaxBytes) {
+          result = await uploadRequest("POST", `${base}/upload`, {
+            "Content-Type": mime,
+            "X-File-Name": encodeURIComponent(file.name.slice(0, 200)),
+            "X-Title": encodeURIComponent(title),
+            ...(subjectId ? { "X-Subject-Id": subjectId } : {}),
+            ...(publicSubject ? { "X-Subject-Name": encodeURIComponent(publicSubject.name), "X-Subject-Color": publicSubject.color } : {}),
+            ...(Number.isFinite(publicDuration) && publicDuration > 0 ? { "X-Duration": String(publicDuration) } : {})
+          }, file, event => {
+            if (!event.lengthComputable) return;
+            const percent = Math.round(event.loaded / event.total * 100);
+            ui.uploadProgress.value = percent;
+            ui.uploadStatus.textContent = percent < 100 ? `Uploading ${percent}%...` : "Audio sent. Waiting for cloud storage confirmation...";
+          });
+        } else {
+          const created = await uploadRequest("POST", `${base}/upload/multipart?action=create`, { "Content-Type": "application/json" }, JSON.stringify(metadata));
+          if (!created || created.ok !== true || !UUID.test(created.id || "") || typeof created.uploadId !== "string" || !created.uploadId || !Number.isSafeInteger(created.partSize) || created.partSize < 5 * 1024 * 1024 || created.partSize > multipartPartBytes) throw new Error("The Worker returned invalid multipart upload details.");
+          multipart = { id: created.id.toLowerCase(), uploadId: created.uploadId, completed: false };
+          const partCount = Math.ceil(file.size / created.partSize);
+          if (partCount > 10000) throw new Error("This file requires too many upload parts.");
+          const parts = [];
+          for (let partNumber = 1; partNumber <= partCount; partNumber++) {
+            if (uploadCancelled) throw new DOMException("Upload cancelled.", "AbortError");
+            const start = (partNumber - 1) * created.partSize, end = Math.min(file.size, start + created.partSize);
+            const partUrl = `${base}/upload/multipart/${multipart.id}?action=part&uploadId=${encodeURIComponent(multipart.uploadId)}&partNumber=${partNumber}`;
+            let uploadedPart, lastError;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              try {
+                uploadedPart = await uploadRequest("PUT", partUrl, { "Content-Type": "application/octet-stream" }, file.slice(start, end), event => {
+                  if (!event.lengthComputable) return;
+                  const percent = Math.min(99, Math.round((start + event.loaded) / file.size * 100));
+                  ui.uploadProgress.value = percent;
+                  ui.uploadStatus.textContent = `Uploading part ${partNumber} of ${partCount} - ${percent}%`;
+                });
+                break;
+              } catch (error) {
+                lastError = error;
+                if (uploadCancelled || error.name === "AbortError" || (error.status && error.status < 500) || attempt === 3) throw error;
+                ui.uploadStatus.textContent = `Retrying part ${partNumber} of ${partCount}...`;
+              }
+            }
+            if (!uploadedPart || uploadedPart.ok !== true || uploadedPart.partNumber !== partNumber || typeof uploadedPart.etag !== "string" || !uploadedPart.etag) throw lastError || new Error(`Part ${partNumber} was not confirmed by R2.`);
+            parts.push({ partNumber, etag: uploadedPart.etag });
+          }
+          if (uploadCancelled) throw new DOMException("Upload cancelled.", "AbortError");
+          ui.uploadStatus.textContent = "All parts sent. Completing the R2 recording...";
+          result = await uploadRequest("POST", `${base}/upload/multipart/${multipart.id}?action=complete&uploadId=${encodeURIComponent(multipart.uploadId)}`, { "Content-Type": "application/json" }, JSON.stringify({ size: file.size, parts }));
+          multipart.completed = true;
+        }
       if (!result || result.ok !== true || !UUID.test(result.id || "") || !result.audioUrl) { uploadFailure("The server did not return a valid upload result. The file may exist in R2; check before retrying."); return; }
       try {
         const link = parseAudioURL(result.audioUrl);
@@ -421,16 +487,19 @@
         const autoplay = Boolean(localIsCurrent && !ui.audioPlayer.paused);
         openCloud(entry, { position, autoplay });
       } catch (error) { uploadFailure(`Upload response could not be used: ${error.message} Check R2 before retrying.`); }
-    };
-    xhr.onerror = () => uploadFailure("Network or CORS error. Open Settings, test the Worker address, and check that the upload Worker code is deployed.");
-    xhr.ontimeout = () => uploadFailure("The upload timed out. The file may already be in R2; check before uploading it again.");
-    xhr.onabort = () => uploadFailure("Upload cancelled in this browser. A server-side copy may exist if the upload had already completed.");
-    xhr.onloadend = () => { uploadXHR = null; setUploading(false); };
-    try { xhr.send(file); }
-    catch (error) { uploadXHR = null; setUploading(false); uploadFailure(`Could not start upload: ${error.message}`); }
+      } catch (error) {
+        if (multipart && !multipart.completed) {
+          const abortUrl = `${base}/upload/multipart/${multipart.id}?action=abort&uploadId=${encodeURIComponent(multipart.uploadId)}`;
+          try { await fetch(abortUrl, { method: "DELETE", credentials: "omit", keepalive: true }); } catch (_) { /* R2 expires incomplete uploads automatically. */ }
+        }
+        uploadFailure(uploadCancelled || error.name === "AbortError" ? "Upload cancelled. Incomplete multipart parts were discarded where possible." : error.message || "The upload failed. Check the Worker deployment and try again.");
+      } finally {
+        uploadXHR = null; setUploading(false); uploadCancelled = false;
+      }
+    })();
   }
   ui.uploadButton.addEventListener("click", upload);
-  ui.cancelUpload.addEventListener("click", () => { if (uploadXHR) uploadXHR.abort(); });
+  ui.cancelUpload.addEventListener("click", () => { if (!uploadActive) return; uploadCancelled = true; if (uploadXHR) uploadXHR.abort(); else uploadFailure("Cancelling upload..."); });
 
   function fillSubjects(select, selected) {
     const value = selected !== undefined ? selected : select.value;
@@ -639,7 +708,7 @@
   function updateConnectionUI() {
     ui.connectionLabel.textContent = apiBase ? "Cloud configured" : "Local only";
     ui.connectionBadge.classList.remove("is-connected"); updateUploadButton();
-    ui.uploadLimitHint.textContent = `Cloud upload limit: ${formatSize(maxBytes)} per file.`;
+    ui.uploadLimitHint.textContent = `Uploads up to ${formatSize(maxBytes)} per file; large recordings are sent in parts.`;
     if (!apiBase && !draftFile) ui.uploadStatus.textContent = "Local playback is ready. Add your Worker base URL in Settings to enable uploads.";
   }
   function openSettings() {
@@ -1096,7 +1165,7 @@
     for (const [action, handler] of Object.entries(handlers)) { try { navigator.mediaSession.setActionHandler(action, handler); } catch (_) { /* Browser may not support this action. */ } }
   }
   window.addEventListener("pagehide", () => persistPosition(true));
-  window.addEventListener("beforeunload", event => { if (uploadXHR || heavyJobActive) { event.preventDefault(); event.returnValue = ""; } });
+  window.addEventListener("beforeunload", event => { if (uploadActive || heavyJobActive) { event.preventDefault(); event.returnValue = ""; } });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") persistPosition(true);
     if (sleepDeadline && Date.now() >= sleepDeadline) { ui.audioPlayer.pause(); setSleep(0); }

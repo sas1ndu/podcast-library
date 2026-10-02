@@ -1,4 +1,4 @@
-# Audio Library frontend 2.1
+# Audio Library frontend 2.2
 
 This folder is a complete static GitHub Pages site. Upload **its contents**, including `vendor/`, to the publishing root. Do not upload `node_modules`, tests, `.env`, Cloudflare source, or the outer folder.
 
@@ -14,7 +14,7 @@ The main library is a public cross-device catalogue built from the R2 `audio/` o
 ## Use
 
 1. Choose **Add audio** to open the right-side upload panel.
-2. Choose/drop MP3, M4A, WAV, or another browser-supported audio file. Local preview remains available even if the source is above the 80 MiB cloud limit.
+2. Choose/drop MP3, M4A, WAV, or another browser-supported audio file. Files above 95 MiB upload in 64 MiB parts; the app supports recordings up to 625 GiB.
 3. Keep **Original**, or select Podcast (Opus/WebM mono ~48 kbps), Small (Opus/WebM mono ~32 kbps), or Compatibility (AAC/M4A mono ~64 kbps), then choose **Optimise**.
 4. Compare measured sizes, preview/download the result, and select the actual upload candidate. The original file is never modified. If the result is larger, the UI recommends the original.
 5. Upload. The outgoing file—not the source—is checked against the configured cloud limit. The title, filename, subject label, and audio become publicly discoverable in the shared library.
@@ -73,8 +73,9 @@ Version-1 local libraries migrate in place. Version-1 JSON backups still import.
 - **WebGPU fails/lost:** the app attempts CPU/WASM fallback. If a failure occurs after device loss, cancel/retry; do not enable unsafe browser flags.
 - **Transcript import rejected:** ensure JSON uses schema version 1 and the correct recording identity, or use valid SRT/VTT timestamps. TXT is accepted without timestamps.
 - **Publish fails:** audio and the local transcript are retained; retry publishing only. Do not upload the audio again.
-- **Upload works but other devices do not see it:** deploy Worker 2.1, confirm `GET /library` returns the recording, and ensure `publicLibrary.enabled` is true.
-- **Shared audio works but transcript does not:** deploy Worker 2.1 and verify the transcript reference belongs to the opened audio. Playback intentionally remains independent.
+- **Upload works but other devices do not see it:** deploy Worker 2.2, confirm `GET /library` returns the recording, and ensure `publicLibrary.enabled` is true.
+- **Large upload returns 404:** deploy Worker 2.2, which adds multipart upload support.
+- **Shared audio works but transcript does not:** deploy Worker 2.2 and verify the transcript reference belongs to the opened audio. Playback intentionally remains independent.
 - **Library differs on another device:** expected; export/import a backup or open a share link.
 
 ## Security and privacy limits
