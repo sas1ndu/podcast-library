@@ -1,4 +1,4 @@
-/* Audio Library 2.2.0. Public settings: config.js.
+/* Audio Library 2.2.1. Public settings: config.js.
  * Audio and the public catalogue live in R2. Personal playback data is local.
  * The browser never receives Cloudflare credentials.
  */
@@ -15,6 +15,7 @@
   }
   const STORAGE_KEY = "audio-library:cloud:v1";
   const CONNECTION_KEY = "audio-library:connection:v1";
+  const DEFAULT_SUBJECTS_VERSION = 1;
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
   const MIME_BY_EXT = { mp3: "audio/mpeg", m4a: "audio/mp4", mp4: "audio/mp4", aac: "audio/aac", wav: "audio/wav", wave: "audio/wav", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg", webm: "audio/webm", flac: "audio/flac" };
@@ -149,7 +150,7 @@
     return subject && typeof subject.id === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(subject.id) && !["all", "unsorted", "__proto__", "constructor"].includes(subject.id) && typeof subject.name === "string" && subject.name.trim() && /^#[0-9a-f]{6}$/i.test(subject.color || "");
   }
   function defaults() {
-    return { version: 2, subjects: (Array.isArray(config.defaultSubjects) ? config.defaultSubjects : []).filter(validSubject).map(s => ({ id: s.id, name: s.name.trim().slice(0, 60), color: s.color })), episodes: [], speed: 1, remember: true, positions: Object.create(null), bookmarks: Object.create(null) };
+    return { version: 2, defaultSubjectsVersion: DEFAULT_SUBJECTS_VERSION, subjects: (Array.isArray(config.defaultSubjects) ? config.defaultSubjects : []).filter(validSubject).map(s => ({ id: s.id, name: s.name.trim().slice(0, 60), color: s.color })), episodes: [], speed: 1, remember: true, positions: Object.create(null), bookmarks: Object.create(null) };
   }
   function normalizeTranscriptRef(value) {
     if (!value || typeof value !== "object") return null;
@@ -167,6 +168,15 @@
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid library data.");
     const state = defaults();
     if (Array.isArray(data.subjects)) state.subjects = Array.from(new Map(data.subjects.filter(validSubject).slice(0, 500).map(s => [s.id, { id: s.id, name: s.name.trim().slice(0, 60), color: s.color }])).values());
+    if (!Number.isSafeInteger(data.defaultSubjectsVersion) || data.defaultSubjectsVersion < DEFAULT_SUBJECTS_VERSION) {
+      const subjectIds = new Set(state.subjects.map(subject => subject.id));
+      for (const subject of defaults().subjects) {
+        if (subjectIds.has(subject.id)) continue;
+        state.subjects.push(subject);
+        subjectIds.add(subject.id);
+      }
+    }
+    state.defaultSubjectsVersion = DEFAULT_SUBJECTS_VERSION;
     const episodes = new Map();
     for (const item of (Array.isArray(data.episodes) ? data.episodes : []).slice(0, 5000)) {
       try { const entry = normalizeEpisode(item); if (!state.subjects.some(s => s.id === entry.subjectId)) entry.subjectId = ""; episodes.set(keyOf(entry), entry); }

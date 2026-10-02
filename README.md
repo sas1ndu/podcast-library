@@ -1,4 +1,4 @@
-# Audio Library frontend 2.2
+# Audio Library frontend 2.2.1
 
 This folder is a complete static GitHub Pages site. Upload **its contents**, including `vendor/`, to the publishing root. Do not upload `node_modules`, tests, `.env`, Cloudflare source, or the outer folder.
 
